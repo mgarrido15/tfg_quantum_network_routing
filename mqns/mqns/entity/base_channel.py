@@ -1,0 +1,133 @@
+from typing import TypedDict, Unpack, override
+
+from mqns.entity.entity import Entity
+from mqns.entity.node import Node
+from mqns.models.delay import DelayInput, parse_delay
+from mqns.simulator import Simulator, Time
+from mqns.utils import log, rng
+
+default_light_speed: list[float] = [2e5]
+"""
+Default speed of light in km/s.
+Initial value is 200000 km/s, the speed of light in fiber optics.
+
+This is defined as list rather than scalar, so that the value can be changed.
+"""
+
+
+class BaseChannelInitKwargs(TypedDict, total=False):
+    bandwidth: int
+    """Bandwidth in bytes/qubits per second. 0 means infinite."""
+    max_buffer_size: int
+    """
+    Maximum buffer size in bytes/qubits. 0 means infinite.
+    Packets/photons queued due to bandwidth limitation are placed in the buffer.
+    If the buffer is full, the next packet/photon is dropped.
+    """
+    length: float
+    """Link length in kilometers."""
+    delay: DelayInput
+    """
+    Propagation delay in seconds or a DelayModel instance.
+    Default is inferred from link length and speed of light, or 0 if link length is unset.
+    """
+    drop_rate: float
+    """Packet/photon loss probability. 0 means never, 1 means always."""
+
+
+class BaseChannel[N: Node](Entity):
+    def __init__(self, name: str, **kwargs: Unpack[BaseChannelInitKwargs]):
+        super().__init__(name=name)
+        self.node_list: list[N] = []
+        self._next_send_time: Time
+
+        self.bandwidth = kwargs.get("bandwidth", 0)
+        assert self.bandwidth >= 0
+
+        self.max_buffer_size = kwargs.get("max_buffer_size", 0)
+        assert self.max_buffer_size >= 0
+
+        self.length = kwargs.get("length", 0.0)
+        assert self.length >= 0.0
+
+        self.delay = parse_delay(kwargs.get("delay", 0 if self.length == 0 else self.length / default_light_speed[0]))
+
+        self.drop_rate = kwargs.get("drop_rate", 0.0)
+        """Packet/photon loss probability. 0 means never, 1 means always."""
+        assert 0.0 <= self.drop_rate <= 1.0
+
+    @override
+    def install(self, simulator: Simulator) -> None:
+        super().install(simulator)
+        self._next_send_time = simulator.ts
+
+    def _send(self, *, packet_repr: str, packet_len: int, next_hop: N) -> tuple[bool, Time]:
+        now = self.simulator.tc
+
+        if next_hop not in self.node_list:
+            raise NextHopNotConnectionException(f"{self}: not connected to {next_hop}")
+
+        if self.bandwidth != 0:
+            send_time = max(self._next_send_time, now)
+
+            if self.max_buffer_size != 0 and send_time > now + self.max_buffer_size / self.bandwidth:
+                # buffer is overflow
+                log.debug(f"{self}: drop {packet_repr} due to overflow")
+                return True, Time.SENTINEL
+
+            self._next_send_time = send_time + packet_len / self.bandwidth
+        else:
+            send_time = now
+
+        # random drop
+        if self.drop_rate > 0 and rng.random() < self.drop_rate:
+            log.debug(f"{self}: drop {packet_repr} due to drop rate")
+            return True, Time.SENTINEL
+
+        # add delay
+        recv_time = send_time + self.delay.calculate()
+        return False, recv_time
+
+    def find_peer(self, own: N) -> N:
+        """
+        Return the node in node_list that is not ``own``.
+
+        Raises:
+            ValueError: node_list does not have two nodes, or ``own`` is not one of them.
+        """
+        if len(self.node_list) != 2:
+            raise ValueError(f"{self} does not have exactly 2 nodes")
+        if self.node_list[0] == own:
+            return self.node_list[1]
+        if self.node_list[1] == own:
+            return self.node_list[0]
+        raise ValueError(f"{self} does not connect to {own}")
+
+
+class NextHopNotConnectionException(Exception):
+    pass
+
+
+def calc_transmission_prob(length: float, alpha: float) -> float:
+    """
+    Compute fiber transmission probability (Beer-Lambert Law).
+
+    Args:
+        length: fiber length in km.
+        alpha: attenuation loss in dB/km.
+
+    Returns:
+        Probability of a single photon to propagate through the fiber without loss.
+    """
+    # In fiber optics, loss is measured in decibel per kilometer.
+    # The decibel is a logarithmic unit used to describe a ratio.
+    # Loss (dB) = 10 * log10( Pin / Pout )
+    # If a fiber has a loss of 10 dB, it means only 10% of the light gets through.
+    # If it has 20 dB, it means only 1% gets through.
+    #
+    # In the formula below, ``-alpha * length`` gives the total loss (negative),
+    # ``/10`` removes the "deci" scaling, ``10**`` is the inverse of log10 that
+    # converts from the logarithmic dB scale to a linear probability.
+    assert length >= 0
+    assert alpha >= 0
+    return 10 ** (-alpha * length / 10)

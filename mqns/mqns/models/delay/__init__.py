@@ -1,0 +1,36 @@
+#    SimQN: a discrete-event simulator for the quantum networks
+#    Copyright (C) 2021-2022 Lutong Chen, Jian Li, Kaiping Xue
+#    University of Science and Technology of China, USTC.
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+from mqns.models.delay.constdelay import ConstantDelayModel
+from mqns.models.delay.delay import DelayModel
+from mqns.models.delay.input import DelayInput, parse_delay
+from mqns.models.delay.normaldelay import NormalDelayModel
+from mqns.models.delay.uniformdelay import UniformDelayModel
+
+__all__ = [
+    "ConstantDelayModel",
+    "DelayInput",
+    "DelayModel",
+    "NormalDelayModel",
+    "parse_delay",
+    "UniformDelayModel",
+]
+
+for name in __all__:
+    if name in ("DelayInput",):
+        continue
+    globals()[name].__module__ = __name__

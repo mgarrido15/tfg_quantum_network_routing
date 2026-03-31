@@ -1,0 +1,238 @@
+from abc import ABC, abstractmethod
+from collections import defaultdict
+from collections.abc import Iterator
+from enum import Enum, auto
+from itertools import pairwise
+from typing import TypedDict, Unpack, override
+
+from mqns.network.fw.message import MultiplexingVector, PathInstructions, validate_path_instructions
+from mqns.network.fw.swap_sequence import SwapSequenceInput, parse_swap_sequence
+from mqns.network.network import QuantumNetwork
+from mqns.simulator import Time
+from mqns.utils import log
+
+
+class QubitAllocationType(Enum):
+    DISABLED = auto()
+    """Disable multiplexing vector, for use with statistical or dynamic EPR multiplexing schemes."""
+    MIN_CAPACITY = auto()
+    """Compute buffer-space multiplexing vector based on minimum memory capacity."""
+    FOLLOW_QCHANNEL = auto()
+    """Compute buffer-space multiplexing vector based on qubit-qchannel assignments."""
+
+
+def _compute_mv(net: QuantumNetwork, route: list[str], qubit_allocation: QubitAllocationType) -> MultiplexingVector | None:
+    """
+    Compute buffer-space multiplexing vector.
+    """
+    match qubit_allocation:
+        case QubitAllocationType.DISABLED:
+            return None
+        case QubitAllocationType.MIN_CAPACITY:
+            c = [net.get_node(node_name).memory.capacity for node_name in route]
+            c[0] *= 2
+            c[-1] *= 2
+            q = min(c) // 2
+            return [(q, q) for _ in range(len(route) - 1)]
+        case QubitAllocationType.FOLLOW_QCHANNEL:
+            return [(0, 0) for _ in range(len(route) - 1)]
+        case _:
+            raise ValueError("unknown qubit_allocation")
+
+
+class RoutingPathInitArgs(TypedDict, total=False):
+    req_id: int
+    """Request identifier, defaults to auto-assignment."""
+    path_id: int
+    """Path identifier for the first path, defaults to auto-assignment."""
+    swap: SwapSequenceInput
+    """Predefined or explicitly specified swapping order, defaults to ASAP."""
+    swap_cutoff: list[float] | None
+    """Swap cut-off times in seconds."""
+    purif: dict[str, int] | None
+    """Purification scheme."""
+
+
+class RoutingPath(ABC):
+    """
+    Compute routing path(s) for installing through ProactiveRoutingController.
+    """
+
+    def __init__(self, src: str, dst: str, **kwargs: Unpack[RoutingPathInitArgs]):
+        self.src = src
+        """
+        Source node name.
+        """
+        self.dst = dst
+        """
+        Destination node name.
+        """
+        self.req_id = kwargs.get("req_id", -1)
+        """
+        Request identifier.
+
+        If unspecified, the controller will assign the next unused value before calling ``compute_paths``.
+        """
+        self.path_id = kwargs.get("path_id", -1)
+        """
+        Path identifier for the first path.
+
+        If unspecified, the controller will assign the next unused value before calling ``compute_paths``.
+
+        When ``compute_paths`` yields multiple paths, this is the path_id on the first path,
+        while subsequent paths are given consecutive path_ids.
+        """
+        self.swap: SwapSequenceInput = kwargs.get("swap") or "asap"
+        self.swap_cutoff = kwargs.get("swap_cutoff")
+        self.purif = kwargs.get("purif") or {}
+
+    @abstractmethod
+    def compute_paths(self, net: QuantumNetwork) -> Iterator[PathInstructions]:
+        """
+        Compute and yield one or more path instructions.
+
+        Args:
+            net: The quantum network.
+                 ``net.build_route()`` must have been called prior to invoking this function.
+
+        Returns:
+            A generator of path instructions.
+            They will be installed into the nodes.
+        """
+
+    def _query_routes(self, net: QuantumNetwork) -> Iterator[list[str]]:
+        """
+        Query routes from source node to destination node.
+        """
+        src = net.get_node(self.src)
+        dst = net.get_node(self.dst)
+        route_result = net.query_route(src, dst)
+        if len(route_result) == 0:
+            raise RuntimeError(f"ROUTING: No route from {src} to {dst}")
+        for _, _, route_nodes in route_result:
+            yield [node.name for node in route_nodes]
+
+    def _make_path_instructions(
+        self,
+        net: QuantumNetwork,
+        route: list[str],
+        m_v: MultiplexingVector | None,
+    ) -> PathInstructions:
+        swap = parse_swap_sequence(self.swap, route)
+        instructions: PathInstructions = {
+            "req_id": self.req_id,
+            "route": route,
+            "swap": swap,
+            "swap_cutoff": [-1] * len(swap),
+            "purif": self.purif,
+        }
+        if self.swap_cutoff is not None:
+            accuracy = net.simulator.accuracy
+            instructions["swap_cutoff"] = [-1 if t < 0 else Time.sec_to_time_slot(t, accuracy) for t in self.swap_cutoff]
+        if m_v is not None:
+            instructions["m_v"] = m_v
+
+        validate_path_instructions(instructions)
+        return instructions
+
+
+class RoutingPathStatic(RoutingPath):
+    """
+    Define a static routing path for installing through ProactiveRoutingController.
+    """
+
+    def __init__(
+        self,
+        route: list[str],
+        *,
+        m_v: MultiplexingVector | QubitAllocationType = QubitAllocationType.FOLLOW_QCHANNEL,
+        **kwargs: Unpack[RoutingPathInitArgs],
+    ):
+        super().__init__(route[0], route[-1], **kwargs)
+        self.route = route
+        self.m_v = m_v
+
+    @override
+    def compute_paths(self, net: QuantumNetwork) -> Iterator[PathInstructions]:
+        m_v = _compute_mv(net, self.route, self.m_v) if isinstance(self.m_v, QubitAllocationType) else self.m_v
+        yield self._make_path_instructions(net, self.route, m_v)
+
+
+class RoutingPathSingle(RoutingPath):
+    """
+    Compute a single shortest path for installing through ProactiveRoutingController.
+    """
+
+    def __init__(
+        self,
+        src: str,
+        dst: str,
+        *,
+        qubit_allocation=QubitAllocationType.FOLLOW_QCHANNEL,
+        **kwargs: Unpack[RoutingPathInitArgs],
+    ):
+        super().__init__(src, dst, **kwargs)
+        self.qubit_allocation = qubit_allocation
+
+    @override
+    def compute_paths(self, net: QuantumNetwork) -> Iterator[PathInstructions]:
+        route = next(self._query_routes(net))
+        log.debug(f"ROUTING: Computed path #{self.path_id}: {route}")
+        yield self._make_path_instructions(net, route, _compute_mv(net, route, self.qubit_allocation))
+
+
+class RoutingPathMulti(RoutingPath):
+    """
+    Compute multiple shortest paths for installing through ProactiveRoutingController.
+
+    This should be used with YenRouteAlgorithm in the QuantumNetwork.
+    The number of paths for each request is determined by the routing algorithm.
+
+    This is only compatible with buffer-space multiplexing scheme.
+    """
+
+    def __init__(
+        self,
+        src: str,
+        dst: str,
+        **kwargs: Unpack[RoutingPathInitArgs],
+    ):
+        super().__init__(src, dst, **kwargs)
+
+    @override
+    def compute_paths(self, net: QuantumNetwork) -> Iterator[PathInstructions]:
+        # Get all shortest paths (M ≥ 1)
+        routes = list(self._query_routes(net))
+
+        # Count usage of each quantum channel across all paths
+        qchannel_use_count = defaultdict[str, int](lambda: 0)
+        for route in routes:
+            for name_a, name_b in pairwise(route):
+                ch = net.get_qchannel(name_a, name_b)
+                qchannel_use_count[ch.name] += 1
+
+        # Process each path
+        for path_id_add, route in enumerate(routes):
+            path_id = self.path_id + path_id_add
+            log.debug(f"ROUTING: Computed path #{path_id}: {route}")
+
+            # Compute buffer-space multiplexing vector as pairs of (qubits_at_node_i, qubits_at_node_i+1)
+            # The qubits are divided among all paths that share the qchannel
+            m_v: MultiplexingVector = []
+            for name_a, name_b in pairwise(route):
+                node_a = net.get_node(name_a)
+                node_b = net.get_node(name_b)
+                ch = net.get_qchannel(name_a, name_b)
+                shared = qchannel_use_count.get(ch.name)
+                assert shared is not None
+
+                qubits_a = sum(1 for _ in node_a.memory.find(lambda *_: True, qchannel=ch))
+                qubits_b = sum(1 for _ in node_b.memory.find(lambda *_: True, qchannel=ch))
+                if shared > 0:
+                    qubits_a //= shared
+                    qubits_b //= shared
+
+                m_v.append((qubits_a, qubits_b))
+
+            # Send install instruction to each node on this path
+            yield self._make_path_instructions(net, route, m_v)
