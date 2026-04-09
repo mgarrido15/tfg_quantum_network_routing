@@ -14,7 +14,7 @@ The primary objective of this project is to evaluate and compare the performance
 
 ---
 
-## Créditos y Licencia
+## Based on MQNS
 
 This project reuses components from [MQNS v0.1.0](https://github.com/usnistgov/mqns), which is licensed under the GNU General Public License v3.0.
 
