@@ -11,9 +11,10 @@ if TYPE_CHECKING:
 
 
 class TimingPhase(Enum):
-    EXTERNAL = auto()
-    ROUTING = auto()
-    INTERNAL = auto()
+    P1 = auto()
+    P2 = auto()
+    P3 = auto()
+    P4 = auto()
 
 
 @final
@@ -150,6 +151,49 @@ class TimingModeSync(TimingMode):
         self.end_time = self.simulator.tc + duration
 
         # schedule next sync signal
+        self.simulator.add_event(func_to_event(self.end_time, self.signal_phase))
+
+        log.debug(f"TIME_SYNC: signal {phase.name} phase")
+        event = TimingPhaseEvent(phase, t=self.simulator.tc)
+        print(f"DEBUG TIMING: Disparando fase {phase.name} a {len(self.network.all_nodes)} nodos")
+        for node in self.network.all_nodes:
+            node.handle(event)
+
+    @override
+    def is_async(self) -> bool:
+        return False
+
+    @override
+    def _is_phase(self, phase: TimingPhase, t: Time | None = None) -> bool:
+        return self.phase is phase and (t is None or t < self.end_time)
+    
+    
+class TimingModeSyncQCast(TimingMode):
+    def __init__(self, t1: float, t2: float, t3: float, t4: float, name="SYNC_QCAST"):
+        super().__init__(name)
+        self.sequence = deque([
+            (TimingPhase.P1, t1),
+            (TimingPhase.P2, t2),
+            (TimingPhase.P3, t3),
+            (TimingPhase.P4, t4)
+        ])
+        self.phase = self.sequence[-1][0]
+        self.end_time = Time.SENTINEL
+
+    @override
+    def install(self, network: "QuantumNetwork"):
+        super().install(network)
+        self.end_time = self.simulator.ts
+        self.simulator.add_event(func_to_event(self.simulator.ts, self.signal_phase))
+
+    def signal_phase(self):
+        this_phase = self.sequence.popleft()
+        self.sequence.append(this_phase)
+        phase, duration = this_phase
+
+        self.phase = phase
+        self.end_time = self.simulator.tc + duration
+
         self.simulator.add_event(func_to_event(self.end_time, self.signal_phase))
 
         log.debug(f"TIME_SYNC: signal {phase.name} phase")

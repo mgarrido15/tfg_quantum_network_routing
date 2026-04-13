@@ -21,6 +21,7 @@ from mqns.network.fw import Forwarder
 from mqns.network.protocol.event import ManageActiveChannels
 
 
+
 class ProactiveForwarder(Forwarder):
     """
     ProactiveForwarder is the forwarder of QNodes and receives routing instructions from the controller.
@@ -52,3 +53,5 @@ class ProactiveForwarder(Forwarder):
                     t=self.simulator.tc,
                 )
             )
+
+
