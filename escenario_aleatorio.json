@@ -1,0 +1,165 @@
+{
+    "nodos": [
+        {
+            "id": "n1",
+            "capacity": 13
+        },
+        {
+            "id": "n2",
+            "capacity": 13
+        },
+        {
+            "id": "n5",
+            "capacity": 5
+        },
+        {
+            "id": "n3",
+            "capacity": 7
+        },
+        {
+            "id": "n6",
+            "capacity": 8
+        },
+        {
+            "id": "n8",
+            "capacity": 9
+        },
+        {
+            "id": "n4",
+            "capacity": 13
+        },
+        {
+            "id": "n7",
+            "capacity": 8
+        }
+    ],
+    "enlaces": [
+        {
+            "u": "n1",
+            "v": "n2",
+            "prob": 0.522342132124385,
+            "fidelity": 0.99
+        },
+        {
+            "u": "n5",
+            "v": "n3",
+            "prob": 0.5012678445672765,
+            "fidelity": 0.99
+        },
+        {
+            "u": "n2",
+            "v": "n6",
+            "prob": 0.5655615714111826,
+            "fidelity": 0.99
+        },
+        {
+            "u": "n3",
+            "v": "n8",
+            "prob": 0.48774536721298073,
+            "fidelity": 0.99
+        },
+        {
+            "u": "n4",
+            "v": "n7",
+            "prob": 0.5395450214062659,
+            "fidelity": 0.99
+        },
+        {
+            "u": "n5",
+            "v": "n6",
+            "prob": 0.43795975277386745,
+            "fidelity": 0.99
+        },
+        {
+            "u": "n3",
+            "v": "n4",
+            "prob": 0.44515606084483456,
+            "fidelity": 0.99
+        },
+        {
+            "u": "n5",
+            "v": "n3",
+            "prob": 0.49527946913506177,
+            "fidelity": 0.99
+        },
+        {
+            "u": "n5",
+            "v": "n6",
+            "prob": 0.5975441449872286,
+            "fidelity": 0.99
+        },
+        {
+            "u": "n1",
+            "v": "n6",
+            "prob": 0.46866499111003684,
+            "fidelity": 0.99
+        },
+        {
+            "u": "n6",
+            "v": "n4",
+            "prob": 0.6096769958719765,
+            "fidelity": 0.99
+        },
+        {
+            "u": "n1",
+            "v": "n6",
+            "prob": 0.5761275669941103,
+            "fidelity": 0.99
+        },
+        {
+            "u": "n1",
+            "v": "n8",
+            "prob": 0.5511753856401077,
+            "fidelity": 0.99
+        },
+        {
+            "u": "n1",
+            "v": "n7",
+            "prob": 0.50737800298636,
+            "fidelity": 0.99
+        }
+    ],
+    "solicitudes": [
+        {
+            "req_id": "REQ_n2_TO_n7",
+            "src": "n2",
+            "dst": "n7",
+            "route": [
+                "n2",
+                "n1",
+                "n7"
+            ],
+            "hops": 2,
+            "route_success_prob": 0.2650249078729079,
+            "route_fidelity": 0.9801,
+            "route_width": 8,
+            "success": false
+        },
+        {
+            "req_id": "REQ_n5_TO_n8",
+            "src": "n5",
+            "dst": "n8",
+            "route": [
+                "n5",
+                "n3",
+                "n8"
+            ],
+            "hops": 2,
+            "route_success_prob": 0.24157026654633085,
+            "route_fidelity": 0.9801,
+            "route_width": 5,
+            "success": false
+        },
+        {
+            "req_id": "REQ_n3_TO_n1",
+            "src": "n3",
+            "dst": "n1",
+            "route": null,
+            "hops": 0,
+            "route_success_prob": 0.0,
+            "route_fidelity": 0.0,
+            "route_width": 0,
+            "success": false
+        }
+    ]
+}

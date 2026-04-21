@@ -1,6 +1,11 @@
-from mqns.network.network.network import QuantumNetwork
-from mqns.network.network.request import Request
-from mqns.network.network.timing import TimingMode, TimingModeAsync, TimingModeSync, TimingPhase, TimingPhaseEvent
+from mqns.mqns.network.network.network import (
+    QuantumNetwork,
+    cargar_topologia_desde_json,
+    dibujar_escenario,
+    guardar_configuracion
+)
+from mqns.mqns.network.network.request import Request
+from mqns.mqns.network.network.timing import TimingMode, TimingModeAsync, TimingModeSync, TimingPhase, TimingPhaseEvent
 
 __all__ = [
     "QuantumNetwork",
@@ -10,6 +15,9 @@ __all__ = [
     "TimingModeSync",
     "TimingPhase",
     "TimingPhaseEvent",
+    "cargar_topologia_desde_json",
+    "dibujar_escenario",
+    "guardar_configuracion",
 ]
 
 for name in __all__:

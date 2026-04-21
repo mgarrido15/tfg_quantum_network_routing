@@ -26,11 +26,16 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from typing import cast, overload
+import json
+
+import matplotlib.pyplot as plt
+import networkx as nx
 
 from mqns.entity.base_channel import BaseChannel
 from mqns.entity.cchannel import ClassicChannel
 from mqns.entity.node import Controller, Node, QNode
 from mqns.entity.qchannel import QuantumChannel
+from mqns.entity.qchannel.link_arch_sim import LinkArchSim
 from mqns.models.epr import Entanglement, WernerStateEntanglement
 from mqns.network.network.request import Request
 from mqns.network.network.timing import TimingMode, TimingModeAsync
@@ -285,6 +290,147 @@ class QuantumNetwork:
         req = Request(src, dst, attr)
         self.requests.append(req)
 
+    def load_topology_from_json(self, json_file: str):
+        """
+        Load topology configuration from a JSON file and apply it to the existing network.
+        
+        The JSON should have the structure:
+        {
+            "nodos": [{"id": "n1", "capacity": 10}, ...],
+            "enlaces": [{"u": "n1", "v": "n2", "prob": 0.9, "fidelity": 0.95}, ...],
+            "solicitudes": [{"src": "n1", "dst": "n2"}, ...]
+        }
+        """
+        with open(json_file, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        # Update node capacities
+        for node_data in config.get("nodos", []):
+            node_id = node_data["id"]
+            capacity = node_data.get("capacity", 10)
+            node = self.get_node(node_id)
+            if node and hasattr(node, 'memory'):
+                node.memory.capacity = capacity
+        
+        # Update channel success_prob and _fidelity
+        for link_data in config.get("enlaces", []):
+            u = link_data["u"]
+            v = link_data["v"]
+            prob = link_data.get("prob", 1.0)
+            fidelity = link_data.get("fidelity", 0.99)
+            # Find the channel
+            qc = self.get_qchannel(u, v)
+            if qc:
+                qc.success_prob = prob
+                qc._fidelity = fidelity
+        
+        # Add requests
+        for req_data in config.get("solicitudes", []):
+            src_name = req_data.get("src")
+            dst_name = req_data.get("dst")
+            if src_name and dst_name:
+                src = self.get_node(src_name)
+                dst = self.get_node(dst_name)
+                if src and dst:
+                    self.add_request(src, dst)
+
+    def build_topology_from_json(self, json_file: str):
+        """
+        Build the complete topology from a JSON file, creating nodes and channels.
+        
+        This method builds the network from scratch based on the JSON configuration,
+        unlike load_topology_from_json which requires nodes to already exist.
+        
+        The JSON should have the structure:
+        {
+            "nodos": [{"id": "n1", "capacity": 10}, ...],
+            "enlaces": [{"u": "n1", "v": "n2", "prob": 0.9, "fidelity": 0.95}, ...],
+            "solicitudes": [{"src": "n1", "dst": "n2"}, ...]
+        }
+        """
+        from mqns.entity.memory import QuantumMemory
+        
+        with open(json_file, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        # Create nodes
+        nodes = []
+        for node_data in config.get("nodos", []):
+            node_id = node_data["id"]
+            
+            # Create QNode
+            node = QNode(node_id)
+            
+            # Add memory to node
+            node.memory = QuantumMemory(f"{node_id}.memory", capacity=node_data.get("capacity", 10))
+            
+            self.add_node(node)
+            nodes.append(node)
+        
+        # Create quantum channels between nodes
+        for link_data in config.get("enlaces", []):
+            u_name = link_data["u"]
+            v_name = link_data["v"]
+            prob = link_data.get("prob")
+            fidelity = link_data.get("fidelity", 0.99)
+            length = link_data.get("length", 3.0)
+            alpha = link_data.get("alpha", 0.2)
+            eta_s = link_data.get("eta_s", 0.7)
+            eta_d = link_data.get("eta_d", 0.8)
+            transfer_error = link_data.get("transfer_error", "DEPOLAR:0.01")
+
+            u_node = self.get_node(u_name)
+            v_node = self.get_node(v_name)
+
+            if u_node and v_node:
+                # Create quantum channel with realistic physical parameters.
+                ch_name = f"QC_{u_name}_{v_name}"
+                link_arch = LinkArchSim()
+                qc = QuantumChannel(
+                    name=ch_name,
+                    alpha=alpha,
+                    length=length,
+                    transfer_error=transfer_error,
+                    link_arch=link_arch,
+                )
+
+                if prob is None:
+                    prob = link_arch._compute_success_prob(
+                        length=length,
+                        alpha=alpha,
+                        eta_s=eta_s,
+                        eta_d=eta_d,
+                    )
+                elif prob < 0.5:
+                    modeled_prob = link_arch._compute_success_prob(
+                        length=length,
+                        alpha=alpha,
+                        eta_s=eta_s,
+                        eta_d=eta_d,
+                    )
+                    prob = max(prob, modeled_prob)
+
+                qc.success_prob = prob
+                qc._fidelity = fidelity
+
+                # Add channel to nodes
+                u_node.add_qchannel(qc)
+                v_node.add_qchannel(qc)
+
+                # Add channel to network
+                self.add_qchannel(qc)
+        
+        # Add requests from JSON
+        for req_data in config.get("solicitudes", []):
+            src_name = req_data.get("src")
+            dst_name = req_data.get("dst")
+            if src_name and dst_name:
+                src = self.get_node(src_name)
+                dst = self.get_node(dst_name)
+                if src and dst:
+                    self.add_request(src, dst)
+
+
     def random_requests(
         self,
         n: int,
@@ -378,3 +524,148 @@ class QuantumNetwork:
 
                 self.add_request(src, dst, attr)
                 break
+
+
+
+def cargar_topologia_desde_json(filename: str) -> dict:
+    """Carga la topología desde un archivo JSON y construye una red cuántica.
+    """
+    print(f"Cargando topología desde {filename}...")
+    
+    with open(filename, 'r', encoding='utf-8') as f:
+        config = json.load(f)
+    
+    return config
+
+
+def dibujar_escenario(net: QuantumNetwork) -> None:
+    """Dibuja la topología de la red cuántica con nodos, enlaces, probabilidades y fidelidades.
+    """
+    G = nx.Graph()
+    
+    nodos_lista = net.nodes if isinstance(net.nodes, list) else list(net.nodes.values())
+
+    labels_nodos = {}
+    for node in nodos_lista:
+        cap = getattr(node.memory, 'capacity', 10)
+        G.add_node(node.name, capacity=cap)
+        labels_nodos[node.name] = f"{node.name}\n(W:{cap})"
+    
+    channels = getattr(net, 'qchannels', getattr(net, '_qchannels', []))
+    for qc in channels:
+        if hasattr(qc, 'node_list'):
+            u_name, v_name = qc.node_list[0].name, qc.node_list[1].name
+        else:
+            u_name, v_name = qc.node1.name, qc.node2.name
+            
+        prob = getattr(qc, 'success_prob', 1.0)
+        G.add_edge(u_name, v_name, weight=prob)
+
+    pos = nx.spring_layout(G, seed=42)
+    
+    plt.figure(figsize=(12, 8))
+    nx.draw_networkx_nodes(G, pos, node_size=1500, node_color='lightblue', edgecolors='black')
+    nx.draw_networkx_labels(G, pos, labels=labels_nodos, font_size=9, font_weight='bold')
+
+    nx.draw_networkx_edges(G, pos, width=2, alpha=0.5)
+    labels_enlaces = {}
+    for qc in channels:
+        if hasattr(qc, 'node_list'):
+            u_name, v_name = qc.node_list[0].name, qc.node_list[1].name
+        else:
+            u_name, v_name = qc.node1.name, qc.node2.name
+        
+        prob = getattr(qc, 'success_prob', 1.0)
+        fid = getattr(qc, '_fidelity', 0.99)
+        labels_enlaces[(u_name, v_name)] = f"P:{prob:.2f}\nF:{fid:.2f}"
+    nx.draw_networkx_edge_labels(G, pos, edge_labels=labels_enlaces, font_color='red', font_size=8)
+
+    plt.title("Topología de Red: Capacidad (W) en Nodos y Probabilidad (P) en Enlaces")
+    plt.axis('off')
+    plt.tight_layout()
+    plt.show()
+
+
+def guardar_configuracion(
+    net: QuantumNetwork, 
+    solicitudes: list,
+    controller=None,
+    filename: str = "escenario_resultado.json"
+) -> None:
+    """Guarda la configuración de la red y resultados de las solicitudes en un archivo JSON.
+    """
+    print(f"\nGuardando configuración en {filename}...")
+    
+    config = {
+        "nodos": [],
+        "enlaces": [],
+        "solicitudes": []
+    }
+    
+    nodos_lista = net.nodes if isinstance(net.nodes, list) else list(net.nodes.values())
+    
+    for node in nodos_lista:
+        config["nodos"].append({"id": node.name, "capacity": getattr(node.memory, 'capacity', 10)})
+    
+    channels = getattr(net, 'qchannels', getattr(net, '_qchannels', []))
+    for qc in channels:
+        if hasattr(qc, 'node_list'):
+            u_name, v_name = qc.node_list[0].name, qc.node_list[1].name
+        else:
+            u_name, v_name = qc.node1.name, qc.node2.name
+            
+        config["enlaces"].append({
+            "u": u_name, 
+            "v": v_name, 
+            "prob": getattr(qc, 'success_prob', 1.0), 
+            "fidelity": getattr(qc, '_fidelity', 0.99)
+        })
+
+    if controller is not None and hasattr(controller, 'request_route_info'):
+        for src_node, dst_node in solicitudes:
+            req_id = _build_request_id(src_node.name, dst_node.name)
+            info = controller.request_route_info.get(req_id)
+            if info is not None:
+                config["solicitudes"].append({
+                    "req_id": req_id,
+                    "src": info["src"],
+                    "dst": info["dst"],
+                    "route": info["route"],
+                    "hops": info["hops"],
+                    "route_success_prob": info["route_success_prob"],
+                    "route_fidelity": info["route_fidelity"],
+                    "route_width": info["width"],
+                    "success": controller.request_success.get(req_id, False),
+                })
+            else:
+                config["solicitudes"].append({
+                    "req_id": req_id,
+                    "src": src_node.name,
+                    "dst": dst_node.name,
+                    "route": None,
+                    "hops": 0,
+                    "route_success_prob": 0.0,
+                    "route_fidelity": 0.0,
+                    "route_width": 0,
+                    "success": False,
+                })
+    else:
+        for src_node, dst_node in solicitudes:
+            config["solicitudes"].append({"src": src_node.name, "dst": dst_node.name})
+
+    with open(filename, "w", encoding='utf-8') as f:
+        json.dump(config, f, indent=4)
+    print(f"Escenario exportado correctamente.")
+
+
+def _build_request_id(src_name: str, dst_name: str) -> str:
+    """Construye un identificador único para una solicitud.
+    
+    Args:
+        src_name (str): Nombre del nodo origen
+        dst_name (str): Nombre del nodo destino
+        
+    Returns:
+        str: Identificador de solicitud
+    """
+    return f"REQ_{src_name}_TO_{dst_name}"

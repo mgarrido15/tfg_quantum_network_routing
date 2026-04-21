@@ -25,13 +25,13 @@ class QCastForwarder:
 
         elif phase_name == "P3":
             self.entanglements.clear() 
-            for req_id, next_hop_name in self.fib.table.items():
+            for req_id in self.fib.table.items():
                 success_prob = 0.9 
                 if random.random() < success_prob:
                     self.entanglements[req_id] = True
 
         elif phase_name == "P4":
-            for req_id, next_hop_name in self.fib.table.items():
+            for req_id in self.fib.table.items():
                 if self.entanglements.get(req_id):
                     net = getattr(self.node, 'network', None)
                     if net and net.controller:
