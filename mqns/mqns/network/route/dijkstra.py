@@ -42,11 +42,35 @@ class DijkstraRouteAlgorithm[N: Node, C: BaseChannel](RouteAlgorithm[N, C]):
         """
         super().__init__(name, metric_func)
         self.route_table: dict[N, dict[N, tuple[float, list[N]]]] = {}
+        self.node_capacities: dict[N, int] | None = None
 
     @override
     def build(self, nodes: list[N], channels: list[C]):
+        def _capacity(node: N) -> int:
+            if self.node_capacities is not None:
+                return int(self.node_capacities.get(node, 0))
+            memory = getattr(node, 'memory', None)
+            return int(getattr(memory, 'capacity', 1))
+
+        active_nodes = [node for node in nodes if _capacity(node) > 0]
+        active_index = {node: idx for idx, node in enumerate(active_nodes)}
+
+        active_channels = []
+        for ch in channels:
+            assert len(ch.node_list) == 2
+            a, b = ch.node_list
+            if a in active_index and b in active_index:
+                active_channels.append(ch)
+
+        self.route_table.clear()
+        for node in nodes:
+            self.route_table[node] = {dst: [float('inf'), [dst]] for dst in nodes}
+
+        if not active_nodes:
+            return
+
         # build adjacency matrix
-        csr_adj = make_csr(nodes, channels, self.metric_func)
+        csr_adj = make_csr(active_nodes, active_channels, self.metric_func)
 
         # unweighted=True -> hop count; directed=False for undirected topologies
         dist, preds = dijkstra(
@@ -67,13 +91,11 @@ class DijkstraRouteAlgorithm[N: Node, C: BaseChannel](RouteAlgorithm[N, C]):
             path_idx.append(src_idx)
             return [nodes[i] for i in path_idx]
 
-        self.route_table.clear()
-
         # For each source node, create the per-destination entry
-        for src_idx, src_node in enumerate(nodes):
+        for src_idx, src_node in enumerate(active_nodes):
             dest_entry: dict[N, Any] = {}
 
-            for dst_idx, dst_node in enumerate(nodes):
+            for dst_idx, dst_node in enumerate(active_nodes):
                 if src_idx == dst_idx:
                     # Source to itself
                     dest_entry[dst_node] = [0.0, [dst_node]]
@@ -86,7 +108,7 @@ class DijkstraRouteAlgorithm[N: Node, C: BaseChannel](RouteAlgorithm[N, C]):
                     path_nodes = _reconstruct_path(src_idx, dst_idx)
                     dest_entry[dst_node] = [hop, path_nodes]
 
-            self.route_table[src_node] = dest_entry
+            self.route_table[src_node].update(dest_entry)
 
     @override
     def query(self, src: N, dst: N) -> list[RouteQueryResult]:

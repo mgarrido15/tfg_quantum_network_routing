@@ -1,22 +1,22 @@
 {
     "nodos": [
-        {"id": "n1", "capacity": 2},
-        {"id": "n2", "capacity": 8},
-        {"id": "n3", "capacity": 5},
-        {"id": "n4", "capacity": 5},
-        {"id": "n5", "capacity": 7},
-        {"id": "n6", "capacity": 6}
+        {"id": "n1", "capacity": 5},
+        {"id": "n2", "capacity": 10},
+        {"id": "n3", "capacity": 12},
+        {"id": "n4", "capacity": 7},
+        {"id": "n5", "capacity": 8}
     ],
     "enlaces": [
-        {"u": "n1", "v": "n2", "length": 3.0, "alpha": 0.2, "eta_s": 0.7, "eta_d": 0.8, "fidelity": 0.98},
-        {"u": "n1", "v": "n3", "length": 2.0, "alpha": 0.2, "eta_s": 0.7, "eta_d": 0.8, "fidelity": 0.98},
-        {"u": "n2", "v": "n4", "length": 4.5, "alpha": 0.2, "eta_s": 0.7, "eta_d": 0.8, "fidelity": 0.98},
-        {"u": "n3", "v": "n6", "length": 2.0, "alpha": 0.2, "eta_s": 0.7, "eta_d": 0.8, "fidelity": 0.98},
-        {"u": "n4", "v": "n5", "length": 4.0, "alpha": 0.2, "eta_s": 0.7, "eta_d": 0.8, "fidelity": 0.98},
-        {"u": "n5", "v": "n6", "length": 1.0, "alpha": 0.2, "eta_s": 0.7, "eta_d": 0.8, "fidelity": 0.98}
+        {"u": "n1", "v": "n2", "length": 4.0},
+        {"u": "n1", "v": "n3", "length": 4.5},
+        {"u": "n2", "v": "n4", "length": 1.0},
+        {"u": "n3", "v": "n5", "length": 1.5},
+        {"u": "n4", "v": "n5", "length": 0.5}
 
     ],
     "solicitudes": [
+        {"src": "n2", "dst": "n3"},
+        {"src": "n2", "dst": "n3"},
         {"src": "n2", "dst": "n3"}
     ]
 }

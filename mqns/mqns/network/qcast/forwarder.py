@@ -1,5 +1,5 @@
 import random
-from mqns.mqns.network.network.timing import TimingPhase, TimingPhaseEvent
+from mqns.network.network.timing import TimingPhase, TimingPhaseEvent
 
 class QCastForwarder:
     def __init__(self, k_max: int = 3):

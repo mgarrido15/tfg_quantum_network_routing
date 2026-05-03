@@ -1,7 +1,7 @@
 import networkx as nx
-from mqns.mqns.network.network.timing import TimingPhaseEvent
-from mqns.mqns.network.fw.controller import RoutingController
-from mqns.mqns.network.qcast.extended_dijkstra import QCastExtendedDijkstra
+from mqns.network.network.timing import TimingPhaseEvent
+from mqns.network.fw.controller import RoutingController
+from mqns.network.qcast.extended_dijkstra import QCastExtendedDijkstra
 
 class QCastController(RoutingController):
     def __init__(self, k_max: int = 3):
@@ -10,6 +10,7 @@ class QCastController(RoutingController):
         self.pending_qcast_queries = []
         self.eda = QCastExtendedDijkstra()
         self.net = None
+        self.node_remaining_capacity = {}
         
 
         self.successful_requests = 0
@@ -60,7 +61,12 @@ class QCastController(RoutingController):
         if not self.net:
             return
 
-        nodes_list = self.net.all_nodes
+        nodes_list = list(getattr(self.net, 'all_nodes', list(getattr(self.net, 'nodes', []))))
+        if not self.node_remaining_capacity:
+            self.node_remaining_capacity = {
+                node: getattr(getattr(node, 'memory', None), 'capacity', 1)
+                for node in nodes_list
+            }
         
         qchannels = getattr(self.net, 'qchannels', getattr(self.net, '_qchannels', []))
         
@@ -71,7 +77,7 @@ class QCastController(RoutingController):
             dst_node = self.net.get_node(req["dst"])
             req_id = req["req_id"]
 
-            virtual_widths = {n: getattr(n.memory, 'capacity', 10) for n in nodes_list}
+            virtual_widths = dict(self.node_remaining_capacity)
 
             result = self.eda.query(src_node, dst_node, virtual_widths=virtual_widths)
 
@@ -103,12 +109,14 @@ class QCastController(RoutingController):
                 }
                 self.request_success.setdefault(req_id, False)
 
+                self._consume_route_capacity(route_objs)
+
                 print(f"RUTA ELEGIDA: {' -> '.join(route_names)}")
                 print(f"  - Saltos: {route_hops}")
                 print(f"  - Probabilidad de éxito estimada: {route_prob:.4f}")
                 print(f"  - Fidelidad estimada: {route_fidelity:.4f}")
                 print(f"  - Métrica EDA: {route_metric:.4f}")
-                print(f"  - Ancho virtual de ruta: {route_width}")
+                print(f"  - Memoria minima efectiva: {route_width}")
                 print("")
 
                 for i in range(len(route_objs) - 1):
@@ -136,6 +144,14 @@ class QCastController(RoutingController):
                 }
                 self.request_success.setdefault(req_id, False)
                 print(f"Controller: No se encontró ruta para {req['src']} -> {req['dst']}")
+
+    def _route_capacity_snapshot(self, route_objs):
+        return {node.name: self.node_remaining_capacity.get(node, 0) for node in route_objs}
+
+    def _consume_route_capacity(self, route_objs):
+        for node in route_objs:
+            current = self.node_remaining_capacity.get(node, 0)
+            self.node_remaining_capacity[node] = max(0, current - 1)
 
     def _get_qchannel(self, node1, node2):
         """Obtener el canal cuántico entre dos nodos"""

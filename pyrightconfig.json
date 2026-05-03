@@ -1,0 +1,4 @@
+{
+  "extraPaths": ["mqns"],
+  "exclude": ["**/__pycache__", "mqns/.vora_cache"]
+}

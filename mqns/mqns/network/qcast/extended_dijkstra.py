@@ -1,6 +1,6 @@
 import heapq
 from typing import override
-from mqns.mqns.network.route.route import RouteAlgorithm, RouteQueryResult
+from mqns.network.route.route import RouteAlgorithm, RouteQueryResult
 
 class QCastExtendedDijkstra(RouteAlgorithm):
     def __init__(self):
@@ -16,7 +16,17 @@ class QCastExtendedDijkstra(RouteAlgorithm):
             self.adj[u][v] = p
             self.adj[v][u] = p
 
-    def query(self, src, dst, virtual_widths: dict):
+    def query(self, src, dst, *args, **kwargs):
+        """Query route from src to dst.
+
+        Accepts an optional keyword `virtual_widths` (dict[node->int]) to enforce
+        node capacity constraints. Kept signature flexible to remain compatible
+        with the base `RouteAlgorithm.query(src, dst)`.
+        """
+        virtual_widths = kwargs.get('virtual_widths', {}) or {}
+        if virtual_widths and (virtual_widths.get(src, 0) <= 0 or virtual_widths.get(dst, 0) <= 0):
+            return []
+
         e_score = {node: -1.0 for node in self.adj}
         prev = {node: None for node in self.adj}
         visited = {node: False for node in self.adj}
@@ -37,6 +47,9 @@ class QCastExtendedDijkstra(RouteAlgorithm):
             curr_e_neg, _, u = heapq.heappop(pq)
             if visited[u]: continue
             visited[u] = True
+
+            if virtual_widths.get(u, 0) <= 0:
+                continue
 
             if u == dst:
                 return self._reconstruct(prev, src, dst, -curr_e_neg)
