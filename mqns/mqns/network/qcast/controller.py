@@ -7,6 +7,8 @@ class QCastController(RoutingController):
     def __init__(self, k_max: int = 3):
         super().__init__()
         self.k_max = k_max
+        # Optional path list used by scripts/controllers that pre-install routes.
+        self.paths = []
         self.pending_qcast_queries = []
         self.eda = QCastExtendedDijkstra()
         self.net = None
@@ -17,6 +19,7 @@ class QCastController(RoutingController):
         self.completed_ids_in_cycle = set()
         self.request_route_info = {}
         self.request_success = {}
+        self.request_success_count = {}
 
     def install(self, node):
         """Instala el controlador en un nodo físico"""
@@ -108,16 +111,9 @@ class QCastController(RoutingController):
                     'width': route_width,
                 }
                 self.request_success.setdefault(req_id, False)
+                self.request_success_count.setdefault(req_id, 0)
 
                 self._consume_route_capacity(route_objs)
-
-                print(f"RUTA ELEGIDA: {' -> '.join(route_names)}")
-                print(f"  - Saltos: {route_hops}")
-                print(f"  - Probabilidad de éxito estimada: {route_prob:.4f}")
-                print(f"  - Fidelidad estimada: {route_fidelity:.4f}")
-                print(f"  - Métrica EDA: {route_metric:.4f}")
-                print(f"  - Memoria minima efectiva: {route_width}")
-                print("")
 
                 for i in range(len(route_objs) - 1):
                     current_node = route_objs[i]
@@ -130,7 +126,6 @@ class QCastController(RoutingController):
                             fw.fib = SimpleNamespace(table={})
                         
                         fw.fib.table[req_id] = next_node.name
-                        print(f" FIB en {current_node.name}: Destino {dst_node.name} -> Salto {next_node.name}")
             else:
                 self.request_route_info[req_id] = {
                     'src': src_node.name,
@@ -143,6 +138,7 @@ class QCastController(RoutingController):
                     'width': 0,
                 }
                 self.request_success.setdefault(req_id, False)
+                self.request_success_count.setdefault(req_id, 0)
                 print(f"Controller: No se encontró ruta para {req['src']} -> {req['dst']}")
 
     def _route_capacity_snapshot(self, route_objs):
@@ -176,5 +172,6 @@ class QCastController(RoutingController):
             self.successful_requests += 1
             self.completed_ids_in_cycle.add(req_id)
             self.request_success[req_id] = True
+            self.request_success_count[req_id] = self.request_success_count.get(req_id, 0) + 1
         
         

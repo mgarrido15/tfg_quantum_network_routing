@@ -15,15 +15,27 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from mqns.network.route.dijkstra import DijkstraRouteAlgorithm
+from mqns.network.route.dijkstra import (
+    DijkstraCapacityRouteAlgorithm,
+    DijkstraDistanceRouteAlgorithm,
+    DijkstraRouteAlgorithm,
+)
 from mqns.network.route.route import RouteAlgorithm, RouteQueryResult
 from mqns.network.route.yen import YenRouteAlgorithm
+from mqns.network.route.capacity_assignment import (
+    assign_dijkstra_routes_with_capacity,
+    initialize_virtual_node_capacity,
+)
 
 __all__ = [
     "DijkstraRouteAlgorithm",
+    "DijkstraCapacityRouteAlgorithm",
+    "DijkstraDistanceRouteAlgorithm",
     "RouteAlgorithm",
     "RouteQueryResult",
     "YenRouteAlgorithm",
+    "assign_dijkstra_routes_with_capacity",
+    "initialize_virtual_node_capacity",
 ]
 
 for name in __all__:

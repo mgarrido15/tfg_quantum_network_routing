@@ -1,10 +1,10 @@
 {
     "nodos": [
-        {"id": "n1", "capacity": 5},
+        {"id": "n1", "capacity": 2},
         {"id": "n2", "capacity": 10},
         {"id": "n3", "capacity": 12},
-        {"id": "n4", "capacity": 7},
-        {"id": "n5", "capacity": 8}
+        {"id": "n4", "capacity": 5},
+        {"id": "n5", "capacity": 7}
     ],
     "enlaces": [
         {"u": "n1", "v": "n2", "length": 4.0},

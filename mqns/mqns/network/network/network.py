@@ -372,7 +372,7 @@ class QuantumNetwork:
             u_name = link_data["u"]
             v_name = link_data["v"]
             prob = link_data.get("prob")
-            fidelity = link_data.get("fidelity", 0.99)
+            fidelity = link_data.get("fidelity", None)  # None para calcular basado en distancia
             length = link_data.get("length", 3.0)
             alpha = link_data.get("alpha", 0.2)
             eta_s = link_data.get("eta_s", 0.7)
@@ -410,6 +410,11 @@ class QuantumNetwork:
                     )
                     prob = max(prob, modeled_prob)
 
+                # Calculate fidelity based on distance if not provided
+                if fidelity is None:
+                    import math
+                    fidelity = math.exp(-alpha * length)
+                
                 qc.success_prob = prob
                 qc._fidelity = fidelity
 

@@ -25,6 +25,97 @@ from mqns.entity.node import Node
 from mqns.network.route.route import MetricFunc, RouteAlgorithm, RouteQueryResult, make_csr
 
 
+def _active_nodes_by_capacity[N: Node](nodes: list[N]) -> list[N]:
+    active_nodes: list[N] = []
+    for node in nodes:
+        memory = getattr(node, "memory", None)
+        capacity = int(getattr(memory, "capacity", 1))
+        if capacity > 0:
+            active_nodes.append(node)
+    return active_nodes
+
+
+def _build_dijkstra_route_table[N: Node, C: BaseChannel](
+    route_table: dict[N, dict[N, tuple[float, list[N]]]],
+    nodes: list[N],
+    channels: list[C],
+    metric_func: MetricFunc[C],
+    active_nodes: list[N],
+    unweighted: bool,
+) -> None:
+    active_index = {node: idx for idx, node in enumerate(active_nodes)}
+
+    active_channels: list[C] = []
+    for ch in channels:
+        assert len(ch.node_list) == 2
+        a, b = ch.node_list
+        if a in active_index and b in active_index:
+            active_channels.append(ch)
+
+    route_table.clear()
+    for node in nodes:
+        route_table[node] = {dst: (float("inf"), [dst]) for dst in nodes}
+
+    if not active_nodes:
+        return
+
+    csr_adj = make_csr(active_nodes, active_channels, metric_func)
+
+    dist, preds = dijkstra(
+        csr_adj,
+        directed=False,
+        unweighted=unweighted,
+        return_predecessors=True,
+    )
+
+    def _reconstruct_path(src_idx: int, dst_idx: int) -> list[N]:
+        path_idx: list[int] = []
+        u = dst_idx
+        while u not in (-9999, src_idx):
+            path_idx.append(u)
+            u = preds[src_idx, u]
+        path_idx.append(src_idx)
+        return [active_nodes[i] for i in path_idx]
+
+    for src_idx, src_node in enumerate(active_nodes):
+        dest_entry: dict[N, Any] = {}
+
+        for dst_idx, dst_node in enumerate(active_nodes):
+            if src_idx == dst_idx:
+                dest_entry[dst_node] = (0.0, [dst_node])
+                continue
+
+            hop = dist[src_idx, dst_idx]
+            if np.isinf(hop):
+                dest_entry[dst_node] = (np.inf, [dst_node])
+            else:
+                dest_entry[dst_node] = (float(hop), _reconstruct_path(src_idx, dst_idx))
+
+        route_table[src_node].update(dest_entry)
+
+
+def _query_dijkstra_route_table[N: Node](
+    route_table: dict[N, dict[N, tuple[float, list[N]]]],
+    src: N,
+    dst: N,
+) -> list[RouteQueryResult[N]]:
+    ls = route_table.get(src, None)
+    if ls is None:
+        return []
+    le = ls.get(dst, None)
+    if le is None:
+        return []
+    try:
+        metric, path = le
+        path = path.copy()
+        path.reverse()
+        if len(path) <= 1 or np.isinf(metric):
+            return []
+        return [RouteQueryResult(metric, path[1], path)]
+    except Exception:
+        return []
+
+
 class DijkstraRouteAlgorithm[N: Node, C: BaseChannel](RouteAlgorithm[N, C]):
     """
     Dijkstra algorithm.
@@ -42,91 +133,74 @@ class DijkstraRouteAlgorithm[N: Node, C: BaseChannel](RouteAlgorithm[N, C]):
         """
         super().__init__(name, metric_func)
         self.route_table: dict[N, dict[N, tuple[float, list[N]]]] = {}
-        self.node_capacities: dict[N, int] | None = None
 
     @override
     def build(self, nodes: list[N], channels: list[C]):
-        def _capacity(node: N) -> int:
-            if self.node_capacities is not None:
-                return int(self.node_capacities.get(node, 0))
-            memory = getattr(node, 'memory', None)
-            return int(getattr(memory, 'capacity', 1))
-
-        active_nodes = [node for node in nodes if _capacity(node) > 0]
-        active_index = {node: idx for idx, node in enumerate(active_nodes)}
-
-        active_channels = []
-        for ch in channels:
-            assert len(ch.node_list) == 2
-            a, b = ch.node_list
-            if a in active_index and b in active_index:
-                active_channels.append(ch)
-
-        self.route_table.clear()
-        for node in nodes:
-            self.route_table[node] = {dst: [float('inf'), [dst]] for dst in nodes}
-
-        if not active_nodes:
-            return
-
-        # build adjacency matrix
-        csr_adj = make_csr(active_nodes, active_channels, self.metric_func)
-
-        # unweighted=True -> hop count; directed=False for undirected topologies
-        dist, preds = dijkstra(
-            csr_adj,
-            directed=False,
-            unweighted=self.unweighted,
-            return_predecessors=True,
+        _build_dijkstra_route_table(
+            self.route_table,
+            nodes,
+            channels,
+            self.metric_func,
+            nodes,
+            self.unweighted,
         )
-
-        # Reconstruct path helper
-        def _reconstruct_path(src_idx: int, dst_idx: int) -> list[N]:
-            # Backtrack from dst to src using predecessors
-            path_idx: list[int] = []
-            u = dst_idx
-            while u not in (-9999, src_idx):
-                path_idx.append(u)
-                u = preds[src_idx, u]
-            path_idx.append(src_idx)
-            return [nodes[i] for i in path_idx]
-
-        # For each source node, create the per-destination entry
-        for src_idx, src_node in enumerate(active_nodes):
-            dest_entry: dict[N, Any] = {}
-
-            for dst_idx, dst_node in enumerate(active_nodes):
-                if src_idx == dst_idx:
-                    # Source to itself
-                    dest_entry[dst_node] = [0.0, [dst_node]]
-                    continue
-
-                hop = dist[src_idx, dst_idx]
-                if np.isinf(hop):  # Unreachable
-                    dest_entry[dst_node] = [np.inf, [dst_node]]
-                else:
-                    path_nodes = _reconstruct_path(src_idx, dst_idx)
-                    dest_entry[dst_node] = [hop, path_nodes]
-
-            self.route_table[src_node].update(dest_entry)
 
     @override
     def query(self, src: N, dst: N) -> list[RouteQueryResult]:
-        ls = self.route_table.get(src, None)
-        if ls is None:
-            return []
-        le = ls.get(dst, None)
-        if le is None:
-            return []
-        try:
-            metric, path = le
-            path = path.copy()
-            path.reverse()
-            if len(path) <= 1 or np.isinf(metric):  # unreachable
-                next_hop = None
-                return []
-            else:
-                next_hop = path[1]
-                return [RouteQueryResult(metric, next_hop, path)]
-        except Exception:
-            return []
+        return _query_dijkstra_route_table(self.route_table, src, dst)
+
+
+class DijkstraCapacityRouteAlgorithm[N: Node, C: BaseChannel](RouteAlgorithm[N, C]):
+    """
+    Dijkstra variant that filters nodes by memory capacity.
+    """
+
+    @override
+    def __init__(self, name="dijkstra_capacity", metric_func: MetricFunc[C] | None = None) -> None:
+        super().__init__(name, metric_func)
+        self.route_table: dict[N, dict[N, tuple[float, list[N]]]] = {}
+
+    @override
+    def build(self, nodes: list[N], channels: list[C]):
+        active_nodes = _active_nodes_by_capacity(nodes)
+        _build_dijkstra_route_table(
+            self.route_table,
+            nodes,
+            channels,
+            self.metric_func,
+            active_nodes,
+            self.unweighted,
+        )
+
+    @override
+    def query(self, src: N, dst: N) -> list[RouteQueryResult[N]]:
+        return _query_dijkstra_route_table(self.route_table, src, dst)
+
+
+class DijkstraDistanceRouteAlgorithm[N: Node, C: BaseChannel](RouteAlgorithm[N, C]):
+    """
+    Dijkstra variant that uses physical link length as the edge metric.
+
+    This variant also filters nodes by memory capacity before building routes.
+    """
+
+    @override
+    def __init__(self, name="dijkstra_distance") -> None:
+        super().__init__(name, lambda ch: float(ch.length))
+        self.route_table: dict[N, dict[N, tuple[float, list[N]]]] = {}
+
+    @override
+    def build(self, nodes: list[N], channels: list[C]):
+        active_nodes = _active_nodes_by_capacity(nodes)
+        _build_dijkstra_route_table(
+            self.route_table,
+            nodes,
+            channels,
+            self.metric_func,
+            active_nodes,
+            self.unweighted,
+        )
+
+    @override
+    def query(self, src: N, dst: N) -> list[RouteQueryResult[N]]:
+        return _query_dijkstra_route_table(self.route_table, src, dst)
