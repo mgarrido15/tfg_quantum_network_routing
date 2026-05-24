@@ -37,6 +37,7 @@ from mqns.models.epr import Entanglement
 from mqns.models.error import DepolarErrorModel
 from mqns.models.error.input import ErrorModelInputLength, parse_error
 from mqns.simulator import Event, Time
+from mqns.utils import log
 
 
 class QuantumChannelInitKwargs(BaseChannelInitKwargs, total=False):
@@ -110,7 +111,12 @@ class QuantumChannel(BaseChannel[QNode]):
         """
         for node in self.node_list:
             cap = capacity if isinstance(capacity, int) else capacity[node.name]
-            node.memory.assign(self, n=cap)
+            log.debug(f"{node}: qchannel {self.name} assign_memory_qubits cap={cap}")
+            try:
+                node.memory.assign(self, n=cap)
+            except Exception as e:
+                log.debug(f"{node}: assign_memory_qubits failed for channel {self.name} cap={cap} -> {e}")
+                raise
 
     def send(self, qubit: QuantumModel, next_hop: QNode):
         """

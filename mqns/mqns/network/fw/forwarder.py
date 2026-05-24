@@ -227,9 +227,9 @@ class Forwarder(ForwarderClassicMixin, Application[QNode]):
 
         1. Start processing elementary entanglements that arrived during EXTERNAL phase.
         """
-        if event.phase is TimingPhase.EXTERNAL:
+        if event.phase in (TimingPhase.EXTERNAL, TimingPhase.P3):
             self.remote_swapped_eprs.clear()
-        elif event.phase is TimingPhase.INTERNAL:
+        elif event.phase in (TimingPhase.INTERNAL, TimingPhase.P4):
             log.debug(f"{self.node}: there are {len(self.waiting_etg)} etg qubits to process")
             for etg_event in self.waiting_etg:
                 self.qubit_is_entangled(etg_event)
@@ -360,6 +360,7 @@ class Forwarder(ForwarderClassicMixin, Application[QNode]):
 
         """
         if not self.node.timing.is_internal():  # in SYNC timing mode EXTERNAL phase
+            log.debug(f"{self.node}: queueing ETG qubit={getattr(event.qubit,'addr',None)} neighbor={event.neighbor}")
             self.waiting_etg.append(event)
             return
 
@@ -594,6 +595,7 @@ class Forwarder(ForwarderClassicMixin, Application[QNode]):
             fib_entry: FIB entry (not available with MuxSchemeStatistical).
         """
         assert qubit.state == QubitState.ELIGIBLE
+        log.debug(f"{self.node}: ELIGIBLE qubit={qubit.addr} fib_entry={getattr(fib_entry,'path_id',None)}")
         if not self.node.timing.is_internal():
             log.debug(f"{self.node}: INT phase is over -> stop swaps")
             return
@@ -887,6 +889,31 @@ class Forwarder(ForwarderClassicMixin, Application[QNode]):
         _, qm = self.memory.read(qubit.addr, has=self.epr_type, set_fidelity=True, remove=True)
         log.debug(f"{self.node}: consume EPR: {qm}")
         self.cnt.increment_n_consumed(qm.fidelity)
+
+        # If a central controller exists (e.g., QCastController), notify it of
+        # an end-to-end successful entanglement so metrics are updated.
+        try:
+            net = getattr(self.node, 'network', None)
+            controller = getattr(net, 'controller', None)
+            path_id = getattr(qubit, 'path_id', None)
+            if controller is not None and path_id is not None and hasattr(self.fib, 'get'):
+                try:
+                    entry = self.fib.get(path_id)
+                    req_id = getattr(entry, 'req_id', None)
+                    if req_id:
+                        # Log and report success to controller (if available)
+                        try:
+                            log.debug(f"{self.node}: REPORT_SUCCESS req_id={req_id} path_id={path_id} fidelity={qm.fidelity}")
+                        except Exception:
+                            pass
+                        # report_success may be defined on QCastController; call if available
+                        if hasattr(controller, 'report_success'):
+                            controller.report_success(req_id, self.simulator.tc, fidelity=qm.fidelity)
+                except Exception:
+                    # Silently ignore issues resolving FIB entry
+                    pass
+        except Exception:
+            pass
 
         self.release_qubit(qubit)
 

@@ -21,6 +21,7 @@ from typing import final
 
 from mqns.network.fw.message import SwapSequence
 from mqns.simulator import Time
+from mqns.utils import log
 
 
 @final
@@ -131,8 +132,14 @@ class Fib:
             IndexError: Entry not found.
         """
         try:
-            return self.table[path_id]
+            entry = self.table[path_id]
+            try:
+                log.debug(f"FIB.get path_id={path_id} -> req_id={getattr(entry,'req_id',None)} route={getattr(entry,'route',None)}")
+            except Exception:
+                pass
+            return entry
         except KeyError:
+            log.debug(f"FIB.get path_id={path_id} -> NOT FOUND")
             raise IndexError(f"FIB entry not found for path_id={path_id}")
 
     def insert_or_replace(self, entry: FibEntry):
@@ -141,6 +148,13 @@ class Fib:
         """
         self.erase(entry.path_id)
         self.table[entry.path_id] = entry
+
+        try:
+            log.debug(
+                f"FIB.insert_or_replace path_id={entry.path_id} req_id={getattr(entry,'req_id',None)} route={getattr(entry,'route',None)}"
+            )
+        except Exception:
+            pass
 
         rg = self.by_req_id.get(entry.req_id)
         if rg:
@@ -158,7 +172,13 @@ class Fib:
         try:
             entry = self.table.pop(path_id)
         except KeyError:
+            log.debug(f"FIB.erase path_id={path_id} -> nothing to remove")
             return
+
+        try:
+            log.debug(f"FIB.erase path_id={path_id} req_id={getattr(entry,'req_id',None)}")
+        except Exception:
+            pass
 
         rg = self.by_req_id[entry.req_id]
         if rg.remove(entry):

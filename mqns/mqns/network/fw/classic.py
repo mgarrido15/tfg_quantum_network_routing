@@ -1,11 +1,11 @@
-import functools
+﻿import functools
 from collections.abc import Callable, Mapping
 from typing import Any, cast
 
 from mqns.entity.cchannel import ClassicCommandDispatcherMixin, ClassicPacket, RecvClassicPacket, classic_cmd_handler
 from mqns.entity.node import Application, Node, QNode
 from mqns.network.fw.fib import Fib, FibEntry
-from mqns.network.network import QuantumNetwork
+from mqns.network.network.network import QuantumNetwork
 from mqns.utils import log
 
 

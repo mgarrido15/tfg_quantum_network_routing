@@ -45,6 +45,7 @@ from mqns.models.delay import DelayInput, parse_delay
 from mqns.models.epr import Entanglement
 from mqns.models.error import TimeDecayInput, parse_time_decay
 from mqns.simulator import Event, Simulator
+from mqns.utils import log
 
 
 class QuantumMemoryInitKwargs(TypedDict, total=False):
@@ -191,12 +192,14 @@ class QuantumMemory(Entity):
         Raises:
             OverflowError: insufficient unassigned qubits.
         """
+        log.debug(f"{self.node}: assign requested ch={ch} n={n} capacity={self.capacity} usage={self._usage}")
         addrs: list[int] = []
         for qubit, _ in itertools.islice(self.find(lambda q, _: q.qchannel is None), n):
             qubit.qchannel = ch
             addrs.append(qubit.addr)
 
         if len(addrs) != n:
+            log.debug(f"{self.node}: assign failed - insufficient qubits assigned={len(addrs)} requested={n}")
             raise OverflowError(f"{self}: insufficient qubits for assign(n={n})")
 
         self._by_qchannel[ch] = list(heapq.merge(self._by_qchannel.get(ch, []), addrs))
@@ -236,6 +239,11 @@ class QuantumMemory(Entity):
         Raises:
             OverflowError: insufficient unallocated qubits.
         """
+        ch_addrs = list(self._by_qchannel.get(ch, []))
+        n_assigned = len(ch_addrs)
+        n_available = sum(1 for addr in ch_addrs if self._storage[addr][0].path_id is None)
+        log.debug(f"{self.node}: allocate ch={ch} path_id={path_id} requested={n} assigned={n_assigned} available={n_available}")
+
         iterable = self.find(lambda q, _: q.path_id is None, qchannel=ch)
         if n == "all":
             want_all = True

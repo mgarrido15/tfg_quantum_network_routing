@@ -80,17 +80,54 @@ class MuxSchemeBufferSpace(MuxSchemeFibBase):
         qchannel: QuantumChannel,
     ) -> None:
         _ = neighbor
+        # debug: show how many qubits are currently assigned to the qchannel
+        ch_addrs = list(self.memory._by_qchannel.get(qchannel, []))
+        log.debug(f"{self.node}: install_path_neighbor path_id={fib_entry.path_id} qchannel={qchannel} assigned_addrs={ch_addrs}")
         assert "m_v" in instructions
         m_v = instructions["m_v"]
         m_v_offset, ch_side = (-1, 1) if direction == PathDirection.L else (0, 0)
 
         n_qubits = m_v[fib_entry.own_idx + m_v_offset][ch_side]
-        addrs = self.memory.allocate(
-            qchannel,
-            fib_entry.path_id,
-            direction,
-            n="all" if n_qubits == 0 else n_qubits,
-        )
+        # Avoid monopolizing the full channel allocation when m_v indicates 0.
+        # Reserving all qubits for one path starves subsequent paths/requests.
+        requested = 1 if n_qubits == 0 else n_qubits
+        controller = getattr(self.fw, "controller", None)
+        req_id = fib_entry.req_id
+        channel_name = getattr(qchannel, "name", str(qchannel))
+        dir_name = "L" if direction == PathDirection.L else "R"
+        try:
+            addrs = self.memory.allocate(
+                qchannel,
+                fib_entry.path_id,
+                direction,
+                n=requested,
+            )
+        except OverflowError:
+            log.debug(
+                f"{self.node}: skipped allocation for path_id={fib_entry.path_id} "
+                f"on {qchannel} (requested={requested}, insufficient qubits)"
+            )
+            if controller is not None and hasattr(controller, "record_channel_allocation"):
+                controller.record_channel_allocation(
+                    req_id,
+                    path_id=fib_entry.path_id,
+                    qchannel=channel_name,
+                    direction=dir_name,
+                    requested=requested,
+                    allocated=0,
+                    success=False,
+                )
+            return
+        if controller is not None and hasattr(controller, "record_channel_allocation"):
+            controller.record_channel_allocation(
+                req_id,
+                path_id=fib_entry.path_id,
+                qchannel=channel_name,
+                direction=dir_name,
+                requested=requested,
+                allocated=len(addrs),
+                success=True,
+            )
         log.debug(f"{self.node}: allocated {direction} qubits: {addrs}")
 
     @override

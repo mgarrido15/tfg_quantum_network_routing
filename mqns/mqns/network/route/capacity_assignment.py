@@ -15,6 +15,10 @@ def assign_dijkstra_routes_with_capacity(
     route_quality_fn: Callable[[Any, list], tuple[float, float]],
     enforce_capacity: bool = True,
 ) -> None:
+    import sys
+    import os
+    debug_file = open(os.path.expanduser("~/dijkstra_debug.log"), "w")
+    
     for req in solicitudes:
         req_id = req["req_id"]
         src_node = req["src"]
@@ -22,7 +26,11 @@ def assign_dijkstra_routes_with_capacity(
 
         try:
             query_result = net.query_route(src_node, dst_node)
+            debug_file.write(f"REQ {req_id}: query_route({src_node.name}, {dst_node.name}) -> {len(query_result) if query_result else 0} results\n")
+            debug_file.flush()
             if not query_result:
+                debug_file.write(f"  No route found, skipping\n")
+                debug_file.flush()
                 continue
 
             candidates = query_result if isinstance(query_result, list) else [query_result]
@@ -111,14 +119,42 @@ def assign_dijkstra_routes_with_capacity(
                     selected = _Simple(alt_path)
 
             if selected is None:
+                debug_file.write(f"  No candidate selected, skipping\n")
+                debug_file.flush()
                 continue
 
             route_nodes = selected.route
             route_names = [n.name for n in route_nodes]
             hops = len(route_names) - 1
             prob, fidelity = route_quality_fn(net, route_nodes)
-        except Exception:
+            debug_file.write(f"  Selected route: {route_names} ({hops} hops, prob={prob}, fidelity={fidelity})\n")
+            debug_file.flush()
+        except Exception as e:
+            debug_file.write(f"  Exception: {e}\n")
+            debug_file.flush()
             continue
+
+        route_key = tuple(route_names)
+        owner_req_id = getattr(controller, 'route_owner_req', {}).get(route_key)
+        if owner_req_id is not None:
+            owner_info = controller.request_route_info.get(owner_req_id, {
+                "route": route_names,
+                "hops": hops,
+                "route_success_prob": prob,
+                "route_fidelity": fidelity,
+                "width": 1,
+            })
+            controller.request_route_info[req_id] = dict(owner_info)
+            if hasattr(controller, 'register_route_alias'):
+                controller.register_route_alias(owner_req_id, req_id)
+            controller.request_success.setdefault(req_id, False)
+            controller.request_success_count.setdefault(req_id, 0)
+            debug_file.write(f"  Route duplicated; alias req {req_id} -> owner {owner_req_id}\n")
+            debug_file.flush()
+            continue
+
+        if hasattr(controller, 'route_owner_req'):
+            controller.route_owner_req[route_key] = req_id
 
         controller.request_route_info[req_id] = {
             "route": route_names,
@@ -137,14 +173,7 @@ def assign_dijkstra_routes_with_capacity(
 
         controller.request_success.setdefault(req_id, False)
         controller.request_success_count.setdefault(req_id, 0)
+    
+    debug_file.close()
 
-        for k in range(len(route_nodes) - 1):
-            current_node = route_nodes[k]
-            next_node = route_nodes[k + 1]
-            fw = getattr(current_node, "forwarder", None)
-            if fw:
-                if not hasattr(fw, "fib") or fw.fib is None:
-                    from types import SimpleNamespace
 
-                    fw.fib = SimpleNamespace(table={})
-                fw.fib.table[req_id] = next_node.name

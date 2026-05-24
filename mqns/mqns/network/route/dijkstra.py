@@ -98,6 +98,7 @@ def _query_dijkstra_route_table[N: Node](
     route_table: dict[N, dict[N, tuple[float, list[N]]]],
     src: N,
     dst: N,
+    virtual_widths: dict[N, float] | None = None,
 ) -> list[RouteQueryResult[N]]:
     ls = route_table.get(src, None)
     if ls is None:
@@ -111,6 +112,20 @@ def _query_dijkstra_route_table[N: Node](
         path.reverse()
         if len(path) <= 1 or np.isinf(metric):
             return []
+        
+        # Validate that all nodes in the path have capacity > 0
+        for node in path:
+            memory = getattr(node, "memory", None)
+            capacity = int(getattr(memory, "capacity", 1))
+            if capacity <= 0:
+                return []
+        
+        # Apply virtual_widths constraints if provided
+        if virtual_widths is not None:
+            for node in path:
+                if node in virtual_widths and virtual_widths[node] <= 0:
+                    return []
+        
         return [RouteQueryResult(metric, path[1], path)]
     except Exception:
         return []
@@ -146,8 +161,8 @@ class DijkstraRouteAlgorithm[N: Node, C: BaseChannel](RouteAlgorithm[N, C]):
         )
 
     @override
-    def query(self, src: N, dst: N) -> list[RouteQueryResult]:
-        return _query_dijkstra_route_table(self.route_table, src, dst)
+    def query(self, src: N, dst: N, virtual_widths: dict[N, float] | None = None) -> list[RouteQueryResult]:
+        return _query_dijkstra_route_table(self.route_table, src, dst, virtual_widths)
 
 
 class DijkstraCapacityRouteAlgorithm[N: Node, C: BaseChannel](RouteAlgorithm[N, C]):
@@ -173,8 +188,8 @@ class DijkstraCapacityRouteAlgorithm[N: Node, C: BaseChannel](RouteAlgorithm[N, 
         )
 
     @override
-    def query(self, src: N, dst: N) -> list[RouteQueryResult[N]]:
-        return _query_dijkstra_route_table(self.route_table, src, dst)
+    def query(self, src: N, dst: N, virtual_widths: dict[N, float] | None = None) -> list[RouteQueryResult[N]]:
+        return _query_dijkstra_route_table(self.route_table, src, dst, virtual_widths)
 
 
 class DijkstraDistanceRouteAlgorithm[N: Node, C: BaseChannel](RouteAlgorithm[N, C]):
@@ -202,5 +217,5 @@ class DijkstraDistanceRouteAlgorithm[N: Node, C: BaseChannel](RouteAlgorithm[N, 
         )
 
     @override
-    def query(self, src: N, dst: N) -> list[RouteQueryResult[N]]:
-        return _query_dijkstra_route_table(self.route_table, src, dst)
+    def query(self, src: N, dst: N, virtual_widths: dict[N, float] | None = None) -> list[RouteQueryResult[N]]:
+        return _query_dijkstra_route_table(self.route_table, src, dst, virtual_widths)

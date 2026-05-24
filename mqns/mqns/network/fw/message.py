@@ -77,6 +77,20 @@ class PathInstructions(TypedDict):
 
 
 def validate_path_instructions(instructions: PathInstructions) -> None:
+    purif = instructions.get("purif", {})
+
+    if isinstance(purif, list):
+        if len(purif) == 0:
+            instructions["purif"] = {}
+        elif all(isinstance(item, (tuple, list)) and len(item) == 2 for item in purif):
+            instructions["purif"] = {str(segment_name): int(rounds) for segment_name, rounds in purif}
+        elif all(isinstance(item, str) for item in purif):
+            instructions["purif"] = {segment_name: 0 for segment_name in purif}
+        else:
+            raise ValueError(
+                "purif must be a dict mapping segment names to rounds, or a compatible legacy list format"
+            )
+
     def check_purif_segment(segment_name: str) -> bool:
         try:
             idx0, idx1 = (route.index(node_name) for node_name in segment_name.split("-"))

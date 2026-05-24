@@ -42,6 +42,8 @@ class QNode(Node):
         self._qchannel_by_dst = dict[Node, "QuantumChannel"]()
         self._memory: "QuantumMemory|None" = None
         self.operators: list["QuantumOperator"] = []
+        self.node_fidelity: float = 1.0
+        """Fidelity contribution of this node (applied to all routes passing through it)."""
 
     def install(self, simulator: Simulator) -> None:
         super().install(simulator)

@@ -1,0 +1,472 @@
+{
+    "Dijkstra Clásico": [
+        {
+            "req_id": "REQ_000_n1_TO_n15",
+            "ruta_asignada": null,
+            "fidelidad_ruta": 0.0,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_001_n2_TO_n12",
+            "ruta_asignada": [
+                "n2",
+                "n5",
+                "n12"
+            ],
+            "fidelidad_ruta": 0.7785504386536397,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_002_n3_TO_n14",
+            "ruta_asignada": [
+                "n3",
+                "n8",
+                "n15",
+                "n14"
+            ],
+            "fidelidad_ruta": 0.7704538599490104,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_003_n4_TO_n11",
+            "ruta_asignada": [
+                "n4",
+                "n11"
+            ],
+            "fidelidad_ruta": 0.8964782905578849,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_004_n5_TO_n9",
+            "ruta_asignada": [
+                "n5",
+                "n12",
+                "n9"
+            ],
+            "fidelidad_ruta": 0.7852607969656151,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_005_n6_TO_n8",
+            "ruta_asignada": [
+                "n6",
+                "n11",
+                "n8"
+            ],
+            "fidelidad_ruta": 0.8771115302024673,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_006_n7_TO_n13",
+            "ruta_asignada": [
+                "n7",
+                "n10",
+                "n13"
+            ],
+            "fidelidad_ruta": 0.7394230096121549,
+            "exitos_conseguidos": 498
+        },
+        {
+            "req_id": "REQ_007_n10_TO_n2",
+            "ruta_asignada": [
+                "n10",
+                "n2"
+            ],
+            "fidelidad_ruta": 0.8597026562158411,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_008_n11_TO_n5",
+            "ruta_asignada": null,
+            "fidelidad_ruta": 0.0,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_009_n14_TO_n1",
+            "ruta_asignada": [
+                "n14",
+                "n13",
+                "n6",
+                "n1"
+            ],
+            "fidelidad_ruta": 0.7872519503548145,
+            "exitos_conseguidos": 0
+        }
+    ],
+    "Dijkstra Capacidad": [
+        {
+            "req_id": "REQ_000_n1_TO_n15",
+            "ruta_asignada": null,
+            "fidelidad_ruta": 0.0,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_001_n2_TO_n12",
+            "ruta_asignada": [
+                "n2",
+                "n5",
+                "n12"
+            ],
+            "fidelidad_ruta": 0.7785504386536397,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_002_n3_TO_n14",
+            "ruta_asignada": [
+                "n3",
+                "n8",
+                "n15",
+                "n14"
+            ],
+            "fidelidad_ruta": 0.7704538599490104,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_003_n4_TO_n11",
+            "ruta_asignada": [
+                "n4",
+                "n11"
+            ],
+            "fidelidad_ruta": 0.8964782905578849,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_004_n5_TO_n9",
+            "ruta_asignada": [
+                "n5",
+                "n12",
+                "n9"
+            ],
+            "fidelidad_ruta": 0.7852607969656151,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_005_n6_TO_n8",
+            "ruta_asignada": [
+                "n6",
+                "n11",
+                "n8"
+            ],
+            "fidelidad_ruta": 0.8771115302024673,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_006_n7_TO_n13",
+            "ruta_asignada": [
+                "n7",
+                "n10",
+                "n13"
+            ],
+            "fidelidad_ruta": 0.7394230096121549,
+            "exitos_conseguidos": 496
+        },
+        {
+            "req_id": "REQ_007_n10_TO_n2",
+            "ruta_asignada": [
+                "n10",
+                "n2"
+            ],
+            "fidelidad_ruta": 0.8597026562158411,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_008_n11_TO_n5",
+            "ruta_asignada": null,
+            "fidelidad_ruta": 0.0,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_009_n14_TO_n1",
+            "ruta_asignada": [
+                "n14",
+                "n13",
+                "n6",
+                "n1"
+            ],
+            "fidelidad_ruta": 0.7872519503548145,
+            "exitos_conseguidos": 0
+        }
+    ],
+    "Dijkstra Distancia": [
+        {
+            "req_id": "REQ_000_n1_TO_n15",
+            "ruta_asignada": null,
+            "fidelidad_ruta": 0.0,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_001_n2_TO_n12",
+            "ruta_asignada": [
+                "n2",
+                "n5",
+                "n12"
+            ],
+            "fidelidad_ruta": 0.7785504386536397,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_002_n3_TO_n14",
+            "ruta_asignada": null,
+            "fidelidad_ruta": 0.0,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_003_n4_TO_n11",
+            "ruta_asignada": [
+                "n4",
+                "n11"
+            ],
+            "fidelidad_ruta": 0.8964782905578849,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_004_n5_TO_n9",
+            "ruta_asignada": null,
+            "fidelidad_ruta": 0.0,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_005_n6_TO_n8",
+            "ruta_asignada": [
+                "n6",
+                "n11",
+                "n8"
+            ],
+            "fidelidad_ruta": 0.7394230096121549,
+            "exitos_conseguidos": 496
+        },
+        {
+            "req_id": "REQ_006_n7_TO_n13",
+            "ruta_asignada": [
+                "n7",
+                "n10",
+                "n13"
+            ],
+            "fidelidad_ruta": 0.7394230096121549,
+            "exitos_conseguidos": 490
+        },
+        {
+            "req_id": "REQ_007_n10_TO_n2",
+            "ruta_asignada": [
+                "n10",
+                "n2"
+            ],
+            "fidelidad_ruta": 0.8597026562158411,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_008_n11_TO_n5",
+            "ruta_asignada": null,
+            "fidelidad_ruta": 0.0,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_009_n14_TO_n1",
+            "ruta_asignada": [
+                "n14",
+                "n9",
+                "n4",
+                "n1"
+            ],
+            "fidelidad_ruta": 0.808166142832015,
+            "exitos_conseguidos": 0
+        }
+    ],
+    "Q-CAST": [
+        {
+            "req_id": "REQ_000_n1_TO_n15",
+            "ruta_asignada": null,
+            "fidelidad_ruta": 0.0,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_001_n2_TO_n12",
+            "ruta_asignada": [
+                "n2",
+                "n5",
+                "n12"
+            ],
+            "fidelidad_ruta": 0.7785504386536397,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_002_n3_TO_n14",
+            "ruta_asignada": [
+                "n3",
+                "n8",
+                "n11",
+                "n14"
+            ],
+            "fidelidad_ruta": 0.801428664779087,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_003_n4_TO_n11",
+            "ruta_asignada": [
+                "n4",
+                "n11"
+            ],
+            "fidelidad_ruta": 0.8964782905578849,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_004_n5_TO_n9",
+            "ruta_asignada": [
+                "n5",
+                "n12",
+                "n9"
+            ],
+            "fidelidad_ruta": 0.7852607969656151,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_005_n6_TO_n8",
+            "ruta_asignada": [
+                "n6",
+                "n11",
+                "n8"
+            ],
+            "fidelidad_ruta": 0.8771115302024673,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_006_n7_TO_n13",
+            "ruta_asignada": [
+                "n7",
+                "n10",
+                "n13"
+            ],
+            "fidelidad_ruta": 0.7394230096121549,
+            "exitos_conseguidos": 496
+        },
+        {
+            "req_id": "REQ_007_n10_TO_n2",
+            "ruta_asignada": [
+                "n10",
+                "n2"
+            ],
+            "fidelidad_ruta": 0.8597026562158411,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_008_n11_TO_n5",
+            "ruta_asignada": [
+                "n11",
+                "n15",
+                "n12",
+                "n5"
+            ],
+            "fidelidad_ruta": 0.7372850375558012,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_009_n14_TO_n1",
+            "ruta_asignada": [
+                "n14",
+                "n9",
+                "n4",
+                "n1"
+            ],
+            "fidelidad_ruta": 0.808166142832015,
+            "exitos_conseguidos": 0
+        }
+    ],
+    "Q-CAST Fidelidad": [
+        {
+            "req_id": "REQ_000_n1_TO_n15",
+            "ruta_asignada": null,
+            "fidelidad_ruta": 0.0,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_001_n2_TO_n12",
+            "ruta_asignada": [
+                "n2",
+                "n5",
+                "n12"
+            ],
+            "fidelidad_ruta": 0.7785504386536397,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_002_n3_TO_n14",
+            "ruta_asignada": [
+                "n3",
+                "n6",
+                "n9",
+                "n14"
+            ],
+            "fidelidad_ruta": 0.7645637264084715,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_003_n4_TO_n11",
+            "ruta_asignada": [
+                "n4",
+                "n11"
+            ],
+            "fidelidad_ruta": 0.8964782905578849,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_004_n5_TO_n9",
+            "ruta_asignada": [
+                "n5",
+                "n12",
+                "n9"
+            ],
+            "fidelidad_ruta": 0.7852607969656151,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_005_n6_TO_n8",
+            "ruta_asignada": [
+                "n6",
+                "n3",
+                "n8"
+            ],
+            "fidelidad_ruta": 0.8398455118525925,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_006_n7_TO_n13",
+            "ruta_asignada": [
+                "n7",
+                "n10",
+                "n13"
+            ],
+            "fidelidad_ruta": 0.7394230096121549,
+            "exitos_conseguidos": 496
+        },
+        {
+            "req_id": "REQ_007_n10_TO_n2",
+            "ruta_asignada": [
+                "n10",
+                "n2"
+            ],
+            "fidelidad_ruta": 0.8597026562158411,
+            "exitos_conseguidos": 0
+        },
+        {
+            "req_id": "REQ_008_n11_TO_n5",
+            "ruta_asignada": [
+                "n11",
+                "n8",
+                "n5"
+            ],
+            "fidelidad_ruta": 0.7394230096121549,
+            "exitos_conseguidos": 494
+        },
+        {
+            "req_id": "REQ_009_n14_TO_n1",
+            "ruta_asignada": [
+                "n14",
+                "n13",
+                "n6",
+                "n1"
+            ],
+            "fidelidad_ruta": 0.7872519503548145,
+            "exitos_conseguidos": 0
+        }
+    ]
+}

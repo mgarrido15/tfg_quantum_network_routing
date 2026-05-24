@@ -15,6 +15,9 @@ class TimingPhase(Enum):
     P2 = auto()
     P3 = auto()
     P4 = auto()
+    ROUTING = P2
+    EXTERNAL = P3
+    INTERNAL = P4
 
 
 @final

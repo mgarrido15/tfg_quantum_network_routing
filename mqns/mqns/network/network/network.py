@@ -38,11 +38,13 @@ from mqns.entity.qchannel import QuantumChannel
 from mqns.entity.qchannel.link_arch_sim import LinkArchSim
 from mqns.models.epr import Entanglement, WernerStateEntanglement
 from mqns.network.network.request import Request
+from mqns.network.network.reporting import estimar_fidelidad_observada_de_ruta
 from mqns.network.network.timing import TimingMode, TimingModeAsync
 from mqns.network.route import DijkstraRouteAlgorithm, RouteAlgorithm, RouteQueryResult
 from mqns.network.topology import ClassicTopology, Topology
 from mqns.simulator import Simulator
 from mqns.utils import rng
+from mqns.utils import log
 
 
 def _save_channel[C: BaseChannel](l: list[C], d: dict[tuple[str, str], C], ch: C):
@@ -364,6 +366,9 @@ class QuantumNetwork:
             # Add memory to node
             node.memory = QuantumMemory(f"{node_id}.memory", capacity=node_data.get("capacity", 10))
             
+            # Set node fidelity if provided in config
+            node.node_fidelity = node_data.get("fidelity", 1.0)
+            
             self.add_node(node)
             nodes.append(node)
         
@@ -424,6 +429,32 @@ class QuantumNetwork:
 
                 # Add channel to network
                 self.add_qchannel(qc)
+                # Assign memory qubits for this channel at both endpoints (default 1 each)
+                try:
+                    qc.assign_memory_qubits()
+                    log.debug(f"Assigned memory qubits for channel {qc.name} on nodes {u_name},{v_name}")
+                except Exception as e:
+                    log.debug(f"Failed to assign memory qubits for channel {qc.name}: {e}")
+                
+                # Create corresponding classic channel for control plane communication
+                from mqns.entity.cchannel import ClassicChannel
+                cc_name = f"CC_{u_name}_{v_name}"
+                cc = ClassicChannel(cc_name)
+                u_node.add_cchannel(cc)
+                v_node.add_cchannel(cc)
+                self.add_cchannel(cc)
+        
+        # Create control plane: connect first node (controller) to all other nodes via classic channels
+        # This ensures the controller can send INSTALL_PATH messages to any node
+        if nodes:
+            from mqns.entity.cchannel import ClassicChannel
+            controller_node = nodes[0]  # First node acts as controller
+            for other_node in nodes[1:]:
+                cc_name = f"CC_CTRL_{controller_node.name}_{other_node.name}"
+                cc = ClassicChannel(cc_name)
+                controller_node.add_cchannel(cc)
+                other_node.add_cchannel(cc)
+                self.add_cchannel(cc)
         
         # Add requests from JSON
         for req_data in config.get("solicitudes", []):
@@ -553,8 +584,9 @@ def dibujar_escenario(net: QuantumNetwork) -> None:
     labels_nodos = {}
     for node in nodos_lista:
         cap = getattr(node.memory, 'capacity', 10)
+        node_fid = getattr(node, 'node_fidelity', 1.0)
         G.add_node(node.name, capacity=cap)
-        labels_nodos[node.name] = f"{node.name}\n(W:{cap})"
+        labels_nodos[node.name] = f"{node.name}\n(W:{cap})\nF:{node_fid:.2f}"
     
     channels = getattr(net, 'qchannels', getattr(net, '_qchannels', []))
     for qc in channels:
@@ -579,13 +611,13 @@ def dibujar_escenario(net: QuantumNetwork) -> None:
             u_name, v_name = qc.node_list[0].name, qc.node_list[1].name
         else:
             u_name, v_name = qc.node1.name, qc.node2.name
-        
         prob = getattr(qc, 'success_prob', 1.0)
-        fid = getattr(qc, '_fidelity', 0.99)
-        labels_enlaces[(u_name, v_name)] = f"P:{prob:.2f}\nF:{fid:.2f}"
+        route_nodes = list(qc.node_list) if hasattr(qc, 'node_list') else [qc.node1, qc.node2]
+        est_fid = estimar_fidelidad_observada_de_ruta(net, route_nodes)
+        labels_enlaces[(u_name, v_name)] = f"P:{prob:.2f}\nF_est:{est_fid:.2f}"
     nx.draw_networkx_edge_labels(G, pos, edge_labels=labels_enlaces, font_color='red', font_size=8)
 
-    plt.title("Topología de Red: Capacidad (W) en Nodos y Probabilidad (P) en Enlaces")
+    plt.title("Topología de Red: Capacidad y Fidelidad estimada en nodos/enlaces")
     plt.axis('off')
     plt.tight_layout()
     plt.show()

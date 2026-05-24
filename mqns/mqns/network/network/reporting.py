@@ -12,11 +12,17 @@ def obtener_prob_y_fidelidad_de_ruta(net: Any, ruta: list) -> tuple[float, float
     Calcula la probabilidad de éxito estimada y fidelidad para una ruta completa.
     
     Itera sobre cada enlace en la ruta y multiplica sus probabilidades y fidelidades.
+    También incluye la fidelidad de los nodos en la ruta.
     
     Retorna: (probabilidad_estimada, fidelidad_ruta)
     """
     route_prob = 1.0      # Comenzamos con prob=1.0
     route_fidelity = 1.0  # Comenzamos con fidelidad=1.0
+
+    # Aplicar fidelidad de nodos en la ruta
+    for nodo in ruta:
+        node_fidelity = getattr(nodo, "node_fidelity", 1.0)
+        route_fidelity *= node_fidelity
 
     # Iterar sobre cada enlace (par de nodos consecutivos)
     for i in range(len(ruta) - 1):
@@ -58,10 +64,34 @@ def obtener_prob_y_fidelidad_de_ruta(net: Any, ruta: list) -> tuple[float, float
     return route_prob, route_fidelity
 
 
+def estimar_fidelidad_observada_de_ruta(net: Any, ruta: list) -> float:
+    """Estimate the observed E2E fidelity before simulation.
+
+        The estimate starts from the static route fidelity and applies a
+        hop-depth penalty that approximates the fidelity loss from extra swap
+        stages. This is intentionally heuristic and tuned to rank shorter,
+        higher-fidelity routes ahead of longer ones when the static metrics are
+        otherwise close.
+
+    This is intentionally heuristic: it is meant to rank candidate routes in
+    a way that better tracks the observed fidelity seen after simulation.
+    """
+    if not ruta or len(ruta) < 2:
+        return 0.0
+
+    _, route_fidelity = obtener_prob_y_fidelidad_de_ruta(net, ruta)
+
+    hops = max(1, len(ruta) - 1)
+    swap_depth_penalty = 1.0 / float(hops ** 4)
+
+    return float(route_fidelity * swap_depth_penalty)
+
+
 def construir_resultados_qcast(controller: Any, solicitudes: list, attempts_per_route: int) -> list:
     resultados = []
     route_info = getattr(controller, "request_route_info", {})
     success_count = getattr(controller, "request_success_count", {})
+    fidelities = getattr(controller, "request_fidelities", {})
 
     for req in solicitudes:
         req_id = req["req_id"]
@@ -98,6 +128,11 @@ def construir_resultados_qcast(controller: Any, solicitudes: list, attempts_per_
                 "route_width": info.get("width", 0),
                 "attempts": attempts_per_route,
                 "successes": success_count.get(req_id, 0),
+                "observed_fidelity": (
+                    float(sum(fidelities.get(req_id, [])) / len(fidelities.get(req_id, [])))
+                    if len(fidelities.get(req_id, [])) > 0
+                    else 0.0
+                ),
             }
         )
 
@@ -112,6 +147,8 @@ def agregar_por_par(resultados: list) -> dict:
             "successes": 0,
             "fidelity_sum": 0.0,
             "fidelity_count": 0,
+            "observed_fidelity_sum": 0.0,
+            "observed_fidelity_count": 0,
             "route_probs": [],
             "route_widths": [],
             "routes": [],
@@ -127,6 +164,8 @@ def agregar_por_par(resultados: list) -> dict:
         if r["route"] is not None:
             a["fidelity_sum"] += r["route_fidelity"]
             a["fidelity_count"] += 1
+            a["observed_fidelity_sum"] += r.get("observed_fidelity", 0.0)
+            a["observed_fidelity_count"] += 1 if r.get("observed_fidelity", 0.0) > 0 else 0
             a["route_probs"].append(r["route_success_prob"])
             a["route_widths"].append(r["route_width"])
             a["routes"].append(" -> ".join(r["route"]))
@@ -158,6 +197,11 @@ def imprimir_resumen_algoritmo(nombre: str, resultados: list, sim_time: float) -
         throughput_par = agg["successes"] / sim_time if sim_time > 0 else 0.0
         p_exito = (agg["successes"] / agg["attempts"]) if agg["attempts"] > 0 else 0.0
         fidelidad = (agg["fidelity_sum"] / agg["fidelity_count"]) if agg["fidelity_count"] > 0 else 0.0
+        fidelidad_observada = (
+            (agg.get("observed_fidelity_sum", 0.0) / agg.get("observed_fidelity_count", 1))
+            if agg.get("observed_fidelity_count", 0) > 0
+            else 0.0
+        )
         route_width = min(agg["route_widths"]) if agg["route_widths"] else 0
         rutas = "; ".join(sorted(set(agg["routes"]))) if agg["routes"] else "SIN_RUTA"
 
@@ -166,6 +210,7 @@ def imprimir_resumen_algoritmo(nombre: str, resultados: list, sim_time: float) -
         print(f"  - Throughput ruta: {throughput_par:.4f} EPS")
         print(f"  - Probabilidad de exito de la ruta: {p_exito:.4f}")
         print(f"  - Fidelidad de la ruta: {fidelidad:.4f}")
+        print(f"  - Fidelidad observada: {fidelidad_observada:.4f}")
         print(f"  - Memoria minima de ruta: {route_width} qubits")
         print(f"  - Ruta usada: {rutas}")
 
@@ -199,10 +244,19 @@ def imprimir_info_rutas_detallada(
             hops = info.get("hops", 0)
             prob = info.get("route_success_prob", 0.0)
             fid = info.get("route_fidelity", 0.0)
+            # Observed fidelity samples (if controller collected them)
+            observed_samples = []
+            if controller is not None and hasattr(controller, 'request_fidelities'):
+                observed_samples = getattr(controller, 'request_fidelities', {}).get(req_id, [])
+            observed_fid = float(sum(observed_samples) / len(observed_samples)) if observed_samples else 0.0
             width = info.get("width", 0)
             metric = info.get("metric", None)
             successes = success_count.get(req_id, 0)
             throughput = successes / sim_time if sim_time > 0 else 0.0
+            observed_prob = successes / attempts_per_route if attempts_per_route > 0 else 0.0
+            install_stats = getattr(controller, 'request_install_stats', {}).get(req_id, {}) if controller is not None else {}
+            install_ok = int(install_stats.get('ok', 0)) if install_stats else 0
+            install_fail = int(install_stats.get('fail', 0)) if install_stats else 0
 
             print(f"\n  Req {req_id}:")
             print(f"    - Ruta: {route if route is not None else 'SIN_RUTA'}")
@@ -210,8 +264,11 @@ def imprimir_info_rutas_detallada(
             print(f"    - Intentos de entrelazamiento: {attempts_per_route}")
             print(f"    - Exitos observados: {successes}")
             print(f"    - Throughput: {throughput:.4f} EPS")
-            print(f"    - Probabilidad de exito: {prob:.4f}")
+            print(f"    - Probabilidad observada: {observed_prob:.4f}")
             print(f"    - Fidelidad: {fid:.4f}")
+            print(f"    - Fidelidad observada: {observed_fid:.4f}")
             print(f"    - Memoria minima: {width}")
+            if install_ok > 0 or install_fail > 0:
+                print(f"    - Instalacion canales OK/FALLA: {install_ok}/{install_fail}")
             if metric is not None:
                 print(f"    - Metrica ruta: {metric}")
