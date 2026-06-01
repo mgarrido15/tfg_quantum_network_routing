@@ -187,7 +187,7 @@ class LinkLayer(Application[QNode]):
 
         Upon entering INTERNAL phase: do nothing.
         """
-        if event.phase in (TimingPhase.EXTERNAL, TimingPhase.P3):
+        if event.phase == TimingPhase.EXTERNAL:
             self.memory.clear()
             for (qchannel, path_id), (neighbor, _) in self.active_channels.items():
                 self.run_active_channel(qchannel, path_id, neighbor)
@@ -395,19 +395,18 @@ class LinkLayer(Application[QNode]):
             next_hop: The neighboring node with which the entanglement is attempted.
             qubit: The memory qubit used for this attempt.
         """
+        log.debug(
+            f"{self.node}: generate_entanglement called qchannel={qchannel} next_hop={next_hop} "
+            f"qubit_addr={getattr(qubit, 'addr', None)} key={getattr(qubit, 'active', None)}"
+        )
 
-        k = 1
         # Calculate which attempt would succeed.
-        success = rng.random() < qchannel.link_arch.success_prob
-
-        if not success:
-            log.debug(f"{self.node}: Intento fallido, esperando al siguiente turno.")
-            return
+        k = rng.geometric(qchannel.link_arch.success_prob)
 
         # Calculate when would the k-th attempt (1-based) succeed.
         # TODO space out EPRs on a qchannel by attempt_interval or qchannel.bandwidth
         epr, t_notify_a, t_notify_b = qchannel.link_arch.make_epr(
-            1, self.simulator.tc, key=qubit.active, src=self.node, dst=next_hop
+            k, self.simulator.tc, key=qubit.active, src=self.node, dst=next_hop
         )
 
         # If the network uses SYNC timing mode but the successful attempt would exceed the current EXTERNAL phase,
@@ -444,10 +443,6 @@ class LinkLayer(Application[QNode]):
         qubit = self.memory.write(epr.key, epr)
         if qubit is None:
             raise Exception(f"{self.node}: Failed to store EPR {epr.name}")
-        try:
-            log.debug(f"{self.node}: stored EPR {epr.name} addr={getattr(qubit,'addr',None)} path_id={getattr(qubit,'path_id',None)} active={getattr(qubit,'active',None)}")
-        except Exception:
-            pass
 
         qubit.state = QubitState.ENTANGLED0
         self.simulator.add_event(QubitEntangledEvent(self.node, neighbor, qubit, t=self.simulator.tc))

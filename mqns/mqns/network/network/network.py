@@ -372,8 +372,35 @@ class QuantumNetwork:
             self.add_node(node)
             nodes.append(node)
         
+        # Precompute a fair distribution of memory qubits per incident link for
+        # each node. This ensures a node's total memory capacity is split
+        # across its incident channels instead of being greedily consumed by
+        # earlier-created channels.
+        links = list(config.get("enlaces", []))
+        incident = {node.name: [] for node in nodes}
+        for idx, link_data in enumerate(links):
+            incident.setdefault(link_data.get("u"), []).append(idx)
+            incident.setdefault(link_data.get("v"), []).append(idx)
+
+        # caps_map[(link_idx, node_name)] => number of qubits to assign for that endpoint
+        caps_map: dict[tuple[int, str], int] = {}
+        for node in nodes:
+            node_name = node.name
+            incident_list = incident.get(node_name, [])
+            d = len(incident_list)
+            total = getattr(getattr(node, 'memory', None), 'capacity', 1)
+            if d == 0:
+                continue
+            base = total // d
+            rem = total % d
+            for li in incident_list:
+                add = base + (1 if rem > 0 else 0)
+                if rem > 0:
+                    rem -= 1
+                caps_map[(li, node_name)] = add
+
         # Create quantum channels between nodes
-        for link_data in config.get("enlaces", []):
+        for link_idx, link_data in enumerate(links):
             u_name = link_data["u"]
             v_name = link_data["v"]
             prob = link_data.get("prob")
@@ -429,10 +456,20 @@ class QuantumNetwork:
 
                 # Add channel to network
                 self.add_qchannel(qc)
-                # Assign memory qubits for this channel at both endpoints (default 1 each)
+                # Assign memory qubits for this channel at both endpoints.
+                # We attempt to assign up to 2 qubits per endpoint but never
+                # exceed the node's total memory capacity (budget tracked
+                # in `node_assign_budget`). This avoids assigning more
+                # qubits across channels than the node can hold.
                 try:
-                    qc.assign_memory_qubits()
-                    log.debug(f"Assigned memory qubits for channel {qc.name} on nodes {u_name},{v_name}")
+                    cap_u = caps_map.get((link_idx, u_name), 0)
+                    cap_v = caps_map.get((link_idx, v_name), 0)
+                    if cap_u > 0 or cap_v > 0:
+                        cap_map = {u_node.name: cap_u, v_node.name: cap_v}
+                        qc.assign_memory_qubits(capacity=cap_map)
+                        log.debug(f"Assigned memory qubits for channel {qc.name} on nodes {u_name},{v_name} cap={cap_map}")
+                    else:
+                        log.debug(f"Skipped memory assignment for channel {qc.name} on nodes {u_name},{v_name} (no budget)")
                 except Exception as e:
                     log.debug(f"Failed to assign memory qubits for channel {qc.name}: {e}")
                 

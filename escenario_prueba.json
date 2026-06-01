@@ -1,0 +1,17 @@
+{
+    "nodos": [
+        {"id": "S", "capacity": 10, "fidelity": 0.99},
+        {"id": "A", "capacity": 10, "fidelity": 0.99},
+        {"id": "B", "capacity": 10, "fidelity": 0.99},
+        {"id": "D", "capacity": 10, "fidelity": 0.99}
+    ],
+    "enlaces": [
+        {"u": "S", "v": "A", "length": 1.0, "fidelity": 0.99, "t_cohere": 100.0, "success_prob": 0.99},
+        {"u": "A", "v": "D", "length": 1.0, "fidelity": 0.99, "t_cohere": 100.0, "success_prob": 0.30},
+        {"u": "A", "v": "B", "length": 1.0, "fidelity": 0.99, "t_cohere": 100.0, "success_prob": 0.99},
+        {"u": "B", "v": "D", "length": 1.0, "fidelity": 0.99, "t_cohere": 100.0, "success_prob": 0.99}
+    ],
+    "solicitudes": [
+        {"src": "S", "dst": "D"}
+    ]
+}

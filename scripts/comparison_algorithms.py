@@ -4,7 +4,7 @@ import json
 
 import matplotlib.pyplot as plt
 
-# Aseguramos que MQNS está en el path
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from mqns.simulator import Simulator
@@ -20,7 +20,6 @@ from mqns.network.route import (
     DijkstraRouteAlgorithm,
     YenRouteAlgorithm,
     assign_dijkstra_routes_with_capacity,
-    initialize_virtual_node_capacity,
 )
 from mqns.network.qcast.controller import QCastController, QCastFidelityController
 from mqns.network.qcast.forwarder import QCastForwarder
@@ -28,8 +27,8 @@ from mqns.network.protocol.link_layer import LinkLayer, LinkLayerCounters
 from mqns.utils import log
 
 
-LIMIT_VAL = 100.0
-ATTEMPTS = 500
+LIMIT_VAL = 200.0
+ATTEMPTS = 1000
 SCENARIO_PATH = os.path.join(os.path.dirname(__file__), "..", "escenario_basico.json")
 
 log.set_default_level("DEBUG") 
@@ -37,10 +36,11 @@ log.set_default_level("DEBUG")
 
 def install_stack(node):
     link_layer = LinkLayer()
-    forwarder = QCastForwarder(k_max=2, purif_enabled=True)
-    setattr(forwarder, "swapping_enabled", True)
+    forwarder = QCastForwarder(k_max=2, purif_enabled=True, swapping_enabled=True)
     node.add_apps([link_layer, forwarder])
     setattr(node, "forwarder", forwarder)
+    if hasattr(node, "controller"):
+        forwarder.controller = node.controller
     return forwarder
 
 
@@ -111,7 +111,6 @@ def ejecutar_simulacion(nombre, controller_class, route_alg=None, use_capacity=T
                         )
                     )
                         
-        initialize_virtual_node_capacity(ctrl, net.all_nodes)
         assign_dijkstra_routes_with_capacity(
             net,
             ctrl,
@@ -124,7 +123,7 @@ def ejecutar_simulacion(nombre, controller_class, route_alg=None, use_capacity=T
 
     resultados = construir_resultados_qcast(ctrl, solicitudes, ATTEMPTS)
     counters = LinkLayerCounters.aggregate(net.nodes)
-    
+
     return resultados, counters, net
 
 
@@ -162,13 +161,41 @@ for nombre, ctrl_class, route_alg, use_cap in sims:
     resultados, counters, net = ejecutar_simulacion(nombre, ctrl_class, route_alg, use_cap)
     ultima_net = net
     
+    # Recuperamos el controlador para leer su memoria interna
+    ctrl = getattr(net, "controller", None)
+    
     # Extraer rutas para guardar en JSON
     lista_rutas = []
     for r in resultados:
+        req_id = r.get("req_id", "Desconocido")
         camino = r.get("path", r.get("route", []))
+        
+        # 1. Extraer la métrica (EDA / EXT)
+        info_ruta = ctrl.request_route_info.get(req_id, {}) if ctrl else {}
+        metrica_eda = info_ruta.get("metric", 0.0)    
+        w_usado = info_ruta.get("w_asignado", 1) 
+        capacidad_final = info_ruta.get("capacidad_residual_final", {})
+        
+        # 2. Extraer los Recovery Paths (Desvíos)
+        recovery_paths_formateados = []
+        if ctrl and hasattr(ctrl, "recovery_paths_info") and hasattr(ctrl, "path_requests"):
+            # Buscamos a qué 'path_id' pertenece este 'req_id'
+            for p_id, req_list in ctrl.path_requests.items():
+                if req_id in req_list:
+                    desvios = ctrl.recovery_paths_info.get(p_id, [])
+                    for desvio in desvios:
+                        recovery_paths_formateados.append(
+                            f"Fallo en {desvio['segment_src']}-{desvio['segment_dst']} -> Usar desvío: {desvio['route']} (Métrica: {desvio['metric']:.2f})"
+                        )
+                    break
+
         lista_rutas.append({
-            "req_id": r.get("req_id", "Desconocido"),
+            "req_id": req_id,
             "ruta_asignada": camino,
+            "metrica_eda": metrica_eda,
+            "w_asignado": w_usado,            
+            "capacidad_final": capacidad_final,
+            "rutas_recuperacion": recovery_paths_formateados,
             "fidelidad_ruta": obtener_fidelidad_reporte(r),
             "exitos_conseguidos": r.get("successes", 0)
         })
@@ -177,12 +204,14 @@ for nombre, ctrl_class, route_alg, use_cap in sims:
     # Calcular métricas globales
     total_exitos = sum(r["successes"] for r in resultados)
     throughput = total_exitos / LIMIT_VAL
-    success_ratio = counters.n_etg / counters.n_attempts if counters.n_attempts > 0 else 0.0
+    entanglement_attempts = getattr(counters, "n_gen_attempts", 0)
+    success_ratio = counters.n_etg / entanglement_attempts if entanglement_attempts > 0 else 0.0
     resultados_finales[nombre] = {
         "throughput": throughput,
         "success_ratio": success_ratio,
         "n_etg": counters.n_etg,
-        "n_attempts": counters.n_attempts,
+        "n_attempts": entanglement_attempts,
+        "n_success_attempts": counters.n_attempts,
         "fidelity": calcular_fidelidad_media(resultados),
     }
 
@@ -194,6 +223,7 @@ for nombre, data in resultados_finales.items():
     print(f"  - Throughput: {data['throughput']:.4f} EPS")
     print(f"  - Tasa de éxito (n_etg/n_attempts): {data['success_ratio']:.4f}")
     print(f"  - n_etg={data['n_etg']}, n_attempts={data['n_attempts']}")
+    print(f"  - n_success_attempts={data['n_success_attempts']}")
     print(f"  - Fidelidad media: {data['fidelity']:.4f}")
 
 
@@ -305,10 +335,6 @@ plt.tight_layout()
 plt.savefig(avg_fidelity_path, dpi=300)
 plt.close()
 
-
-# =====================================================================
-# GUARDADO DE DATOS Y VISUALIZACIÓN FINAL
-# =====================================================================
 
 rutas_json_path = os.path.join(output_dir, "rutas_asignadas.json")
 with open(rutas_json_path, "w", encoding="utf-8") as f:

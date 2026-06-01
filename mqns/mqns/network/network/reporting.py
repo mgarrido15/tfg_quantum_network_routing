@@ -116,6 +116,26 @@ def construir_resultados_qcast(controller: Any, solicitudes: list, attempts_per_
             )
             continue
 
+        # Determinar la fidelidad de ruta que vamos a reportar.
+        # Por defecto queremos usar aquí la "fidelidad estimada" previa a la
+        # simulación. Esto facilita comparaciones deterministas entre rutas
+        # (y evita que pequeñas variaciones en muestras observadas oculten la
+        # calidad esperada de la ruta). Si se prefiere usar la fidelidad
+        # observada real, la clave `observed_fidelity` ya está calculada más
+        # abajo y `scripts/*` elige entre ambas según disponibilidad.
+        estimated_fidelity = 0.0
+        # El objeto controlador normalmente referencia la red en `controller.net`.
+        net = getattr(controller, 'net', None)
+        route_nodes = info.get("route") if info is not None else None
+        if net is not None and route_nodes:
+            # `estimar_fidelidad_observada_de_ruta` aplica la penalización por
+            # profundidad de swaps y devuelve una estimación utilizable.
+            try:
+                estimated_fidelity = estimar_fidelidad_observada_de_ruta(net, route_nodes)
+            except Exception:
+                # En caso de error al estimar, fallback a la fidelidad estática
+                estimated_fidelity = info.get("route_fidelity", 0.0)
+
         resultados.append(
             {
                 "req_id": req_id,
@@ -124,7 +144,11 @@ def construir_resultados_qcast(controller: Any, solicitudes: list, attempts_per_
                 "route": info.get("route"),
                 "hops": info.get("hops", 0),
                 "route_success_prob": info.get("route_success_prob", 0.0),
-                "route_fidelity": info.get("route_fidelity", 0.0),
+                # Aquí se expone la fidelidad estimada (pre-simulación).
+                # Para cambiar esto en el futuro, sustituir por:
+                #  - info.get("route_fidelity") -> fidelidad estática del enlace
+                #  - observed_fidelity (más abajo) -> fidelidad medida en la sim
+                "route_fidelity": float(estimated_fidelity),
                 "route_width": info.get("width", 0),
                 "attempts": attempts_per_route,
                 "successes": success_count.get(req_id, 0),

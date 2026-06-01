@@ -1,24 +1,29 @@
 {
     "nodos": [
         {"id": "n1", "capacity": 2, "fidelity": 0.91},
-        {"id": "n2", "capacity": 10, "fidelity": 0.99},
+        {"id": "n2", "capacity": 12, "fidelity": 0.99},
         {"id": "n3", "capacity": 12, "fidelity": 0.99},
-        {"id": "n4", "capacity": 5, "fidelity": 0.99},
-        {"id": "n5", "capacity": 7, "fidelity": 0.99},
-        {"id": "n6", "capacity": 7, "fidelity": 0.96},
-        {"id": "n7", "capacity": 7, "fidelity": 0.95}
+        {"id": "n4", "capacity": 12, "fidelity": 0.95},
+        {"id": "n5", "capacity": 6, "fidelity": 0.94},
+        {"id": "n6", "capacity": 6, "fidelity": 0.99},
+        {"id": "n7", "capacity": 6, "fidelity": 0.99},
+        {"id": "n8", "capacity": 6, "fidelity": 0.99}
     ],
     "enlaces": [
-        {"u": "n1", "v": "n2", "length": 3.5, "fidelity": 0.87, "t_cohere": 100.0, "success_prob": 0.7},
-        {"u": "n1", "v": "n3", "length": 3.0, "fidelity": 0.80, "t_cohere": 100.0, "success_prob": 0.6},
-        {"u": "n2", "v": "n4", "length": 0.3, "fidelity": 0.93, "t_cohere": 100.0, "success_prob": 0.3},
-        {"u": "n3", "v": "n5", "length": 0.4, "fidelity": 0.92, "t_cohere": 100.0, "success_prob": 0.4},
-        {"u": "n3", "v": "n7", "length": 0.4, "fidelity": 0.92, "t_cohere": 100.0, "success_prob": 0.6},
-        {"u": "n4", "v": "n5", "length": 0.2, "fidelity": 0.96, "t_cohere": 100.0, "success_prob": 0.4},
-        {"u": "n2", "v": "n6", "length": 0.3, "fidelity": 0.93, "t_cohere": 100.0, "success_prob": 0.3},
-        {"u": "n6", "v": "n7", "length": 0.2, "fidelity": 0.96, "t_cohere": 100.0, "success_prob": 0.5}
+        {"u": "n1", "v": "n2", "length": 3.5},
+        {"u": "n1", "v": "n3", "length": 3.0},
+        {"u": "n2", "v": "n4", "length": 0.3},
+        {"u": "n3", "v": "n5", "length": 0.4},
+        {"u": "n3", "v": "n7", "length": 0.4},
+        {"u": "n4", "v": "n5", "length": 0.2},
+        {"u": "n2", "v": "n6", "length": 0.3},
+        {"u": "n6", "v": "n7", "length": 0.2},
+        {"u": "n7", "v": "n8", "length": 0.2},
+        {"u": "n8", "v": "n6", "length": 0.2}
+
     ],
     "solicitudes": [
-        {"src": "n2", "dst": "n3"}
+        {"src": "n2", "dst": "n3"},
+        {"src": "n4", "dst": "n3"}
     ]
 }

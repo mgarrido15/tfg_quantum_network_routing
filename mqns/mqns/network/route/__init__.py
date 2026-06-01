@@ -24,7 +24,6 @@ from mqns.network.route.route import RouteAlgorithm, RouteQueryResult
 from mqns.network.route.yen import YenRouteAlgorithm
 from mqns.network.route.capacity_assignment import (
     assign_dijkstra_routes_with_capacity,
-    initialize_virtual_node_capacity,
 )
 
 __all__ = [
@@ -35,7 +34,6 @@ __all__ = [
     "RouteQueryResult",
     "YenRouteAlgorithm",
     "assign_dijkstra_routes_with_capacity",
-    "initialize_virtual_node_capacity",
 ]
 
 for name in __all__:

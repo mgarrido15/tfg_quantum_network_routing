@@ -134,28 +134,6 @@ def assign_dijkstra_routes_with_capacity(
             debug_file.flush()
             continue
 
-        route_key = tuple(route_names)
-        owner_req_id = getattr(controller, 'route_owner_req', {}).get(route_key)
-        if owner_req_id is not None:
-            owner_info = controller.request_route_info.get(owner_req_id, {
-                "route": route_names,
-                "hops": hops,
-                "route_success_prob": prob,
-                "route_fidelity": fidelity,
-                "width": 1,
-            })
-            controller.request_route_info[req_id] = dict(owner_info)
-            if hasattr(controller, 'register_route_alias'):
-                controller.register_route_alias(owner_req_id, req_id)
-            controller.request_success.setdefault(req_id, False)
-            controller.request_success_count.setdefault(req_id, 0)
-            debug_file.write(f"  Route duplicated; alias req {req_id} -> owner {owner_req_id}\n")
-            debug_file.flush()
-            continue
-
-        if hasattr(controller, 'route_owner_req'):
-            controller.route_owner_req[route_key] = req_id
-
         controller.request_route_info[req_id] = {
             "route": route_names,
             "hops": hops,
@@ -173,6 +151,105 @@ def assign_dijkstra_routes_with_capacity(
 
         controller.request_success.setdefault(req_id, False)
         controller.request_success_count.setdefault(req_id, 0)
+
+        # Install path in each forwarder's FIB and reserve qubits via mux
+        debug_file.write(f"  Installing path on {len(route_names)} nodes...\n")
+        debug_file.flush()
+        for idx, node_name in enumerate(route_names):
+            qnode = net.get_node(node_name)
+            if qnode is None:
+                debug_file.write(f"    Node {node_name} not found\n")
+                debug_file.flush()
+                continue
+            
+            fw = getattr(qnode, "forwarder", None)
+            if fw is None or not hasattr(fw, "fib"):
+                debug_file.write(f"    Node {node_name}: no forwarder or fib\n")
+                debug_file.flush()
+                continue
+            
+            debug_file.write(f"    Installing on node {node_name} (index {idx}/{len(route_names)})\n")
+            debug_file.flush()
+
+            # Create FibEntry first
+            try:
+                from mqns.network.fw.fib import FibEntry
+                from mqns.entity.memory.memory_qubit import PathDirection
+                
+                # Compute swap and purif instructions
+                swap = []
+                purif = []
+                if idx < len(route_names) - 1:  # Not the last hop
+                    swap.append(idx)
+                
+                fib_entry = FibEntry(
+                    path_id=req_id,
+                    req_id=req_id,
+                    route=route_names,
+                    own_idx=idx,
+                    swap=swap,
+                    swap_cutoff=[],
+                    purif=purif,
+                )
+                fw.fib.insert_or_replace(fib_entry)
+                debug_file.write(f"      Created FibEntry with route {route_names}, own_idx={idx}\n")
+                debug_file.flush()
+                
+                # Now try to reserve qubits by manually finding neighbors and calling mux
+                
+                # Left neighbor (previous in path)
+                if idx > 0:
+                    left_node_name = route_names[idx - 1]
+                    left_node = net.get_node(left_node_name)
+                    if left_node is not None:
+                        try:
+                            qchannel = qnode.get_qchannel(left_node)
+                            if qchannel is not None and fw.mux is not None:
+                                debug_file.write(f"      Calling mux.install_path_neighbor(LEFT, {left_node_name})\n")
+                                debug_file.flush()
+                                instructions = {
+                                    "route": route_names,
+                                    "swap": swap,
+                                    "purif": purif,
+                                    "req_id": req_id,
+                                }
+                                fw.mux.install_path_neighbor(
+                                    instructions, fib_entry, PathDirection.L, left_node, qchannel
+                                )
+                        except Exception as e:
+                            debug_file.write(f"      Left neighbor exception: {e}\n")
+                            debug_file.flush()
+                            pass
+                
+                # Right neighbor (next in path)
+                if idx < len(route_names) - 1:
+                    right_node_name = route_names[idx + 1]
+                    right_node = net.get_node(right_node_name)
+                    if right_node is not None:
+                        try:
+                            qchannel = qnode.get_qchannel(right_node)
+                            if qchannel is not None and fw.mux is not None:
+                                debug_file.write(f"      Calling mux.install_path_neighbor(RIGHT, {right_node_name})\n")
+                                debug_file.flush()
+                                instructions = {
+                                    "route": route_names,
+                                    "swap": swap,
+                                    "purif": purif,
+                                    "req_id": req_id,
+                                }
+                                fw.mux.install_path_neighbor(
+                                    instructions, fib_entry, PathDirection.R, right_node, qchannel
+                                )
+                        except Exception as e:
+                            debug_file.write(f"      Right neighbor exception: {e}\n")
+                            debug_file.flush()
+                            pass
+            except Exception as err:
+                debug_file.write(f"      FibEntry creation exception: {err}\n")
+                debug_file.flush()
+                # Silently continue
+                pass
+
     
     debug_file.close()
 
