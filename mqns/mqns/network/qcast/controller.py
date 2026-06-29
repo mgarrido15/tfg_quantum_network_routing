@@ -132,6 +132,34 @@ class QCastController(RoutingController):
     def _build_fair_m_v(self, route_names: list[str], w: int = 1) -> list[tuple[int, int]]:
         return [(w, w) for _ in range(max(0, len(route_names) - 1))]
 
+    def _route_bottleneck_width(self, route_objs: list[Any]) -> int:
+        if not route_objs:
+            return 0
+
+        bottleneck = float('inf')
+        for i, node in enumerate(route_objs):
+            cap = self.node_remaining_capacity.get(node, 0)
+            if i != 0 and i != len(route_objs) - 1:
+                cap = cap // 2
+            bottleneck = min(bottleneck, cap)
+
+        return int(bottleneck) if bottleneck != float('inf') else 0
+
+    def _query_route_without_edges(self, src_node, dst_node, excluded_edges, virtual_widths):
+        removed_edges = []
+        try:
+            for left_node, right_node in excluded_edges:
+                if left_node in self.eda.adj and right_node in self.eda.adj[left_node]:
+                    removed_edges.append((left_node, right_node, self.eda.adj[left_node][right_node]))
+                    del self.eda.adj[left_node][right_node]
+                if right_node in self.eda.adj and left_node in self.eda.adj[right_node]:
+                    removed_edges.append((right_node, left_node, self.eda.adj[right_node][left_node]))
+                    del self.eda.adj[right_node][left_node]
+            return self.eda.query(src_node, dst_node, virtual_widths=virtual_widths)
+        finally:
+            for left_node, right_node, p_link in removed_edges:
+                self.eda.adj.setdefault(left_node, {})[right_node] = p_link
+
     def _process_all_qcast_requests(self):
         """
         FASE P2:
@@ -186,7 +214,7 @@ class QCastController(RoutingController):
                     for i, node in enumerate(route_objs):
                         cap = self.node_remaining_capacity.get(node, 0)
                         if i != 0 and i != len(route_objs) - 1:
-                            cap = cap // 2  # Nodos intermedios necesitan 2 qubits por swap
+                            cap = cap // 2  
                         w_bottleneck = min(w_bottleneck, cap)
                     
                     w_bottleneck = int(w_bottleneck)
@@ -219,7 +247,7 @@ class QCastController(RoutingController):
         # ========================================================
         allocated_req_ids = set()
 
-        for req, result, w_real in allocated_requests:
+        for req, result, w_real in sorted(allocated_requests, key=lambda item: (item[1].metric, len(item[1].route))):
             req_id = req["req_id"]
             allocated_req_ids.add(req_id)
             
@@ -229,6 +257,8 @@ class QCastController(RoutingController):
             route_names = [n.name for n in route_objs]
             route_prob, route_fidelity = obtener_prob_y_fidelidad_de_ruta(self.net, route_objs)
             route_hops = len(route_objs) - 1
+            recovery_candidates: list[dict[str, Any]] = []
+            recovery_routes_seen: set[tuple[str, ...]] = set()
 
             if req_id not in self.request_route_info:
                 self.request_route_info[req_id] = {
@@ -278,39 +308,118 @@ class QCastController(RoutingController):
                     u = route_objs[idx]     
                     v = route_objs[idx + l] 
                     
-                    alt_result = self.eda.query(u, v, virtual_widths=memoria_residual)
-                    if not alt_result:
-                        alt_result = self.eda.query(u, v)
-                    
-                    if alt_result and len(alt_result) > 0:
-                        alt_route = alt_result[0].route
-                        alt_names = [n.name for n in alt_route]
+                    direct_result = self.eda.query(u, v, virtual_widths=memoria_residual)
+                    if direct_result and len(direct_result) > 0:
+                        direct_route = direct_result[0].route
+                        direct_names = [n.name for n in direct_route]
                         segmento_original = [node.name for node in route_objs[idx:idx+l+1]]
-                        
-                        if alt_names != segmento_original:
-                            if not self._consume_route_capacity(alt_route, w=1):
-                                log.debug(
-                                    f"Q-CAST recovery path accepted without residual-capacity reservation: "
-                                    f"req_id={req_id} segment={u.name}-{v.name} route={alt_names}"
-                                )
+                        if direct_names != segmento_original:
+                            route_key = tuple(direct_names)
+                            if route_key not in recovery_routes_seen:
+                                recovery_routes_seen.add(route_key)
+                                recovery_candidates.append({
+                                    'segment_src': u.name,
+                                    'segment_dst': v.name,
+                                    'route': direct_names,
+                                    'metric': direct_result[0].metric,
+                                    'width': self._route_bottleneck_width(direct_route),
+                                    'hops': len(direct_names) - 1,
+                                })
 
-                            rec_path_id = self.next_path_id
-                            self.next_path_id += 1
-                            self.path_w[rec_path_id] = 1
-                            self.path_route_names[rec_path_id] = alt_names
-                            
-                            rec_route_path = RoutingPathStatic(alt_names, req_id=req_id, path_id=rec_path_id, m_v=self._build_fair_m_v(alt_names, w=1))
-                            rec_instructions = next(rec_route_path.compute_paths(self.net))
-                            rec_instructions["req_id"] = req_id
-                            rec_install_msg = {"cmd": "INSTALL_PATH", "path_id": rec_path_id, "instructions": rec_instructions}
-                            
-                            for node_name in alt_names:
-                                self._deliver_install_path(self.net.get_node(node_name), rec_install_msg)
+                    excluded_edge_names = {
+                        tuple(sorted((left_name, right_name)))
+                        for route_id, route_names in self.path_route_names.items()
+                        if route_names
+                        for left_name, right_name in zip(route_names[:-1], route_names[1:])
+                    }
+                    excluded_edge_names.update(
+                        tuple(sorted((left_node.name, right_node.name)))
+                        for left_node, right_node in zip(route_objs[idx:idx + l], route_objs[idx + 1:idx + l + 1])
+                    )
+                    excluded_edges = [
+                        (self.net.get_node(left_name), self.net.get_node(right_name))
+                        for left_name, right_name in excluded_edge_names
+                        if self.net.get_node(left_name) is not None and self.net.get_node(right_name) is not None
+                    ]
 
-                            self.recovery_paths_info[path_id].append({
-                                'segment_src': u.name, 'segment_dst': v.name,
-                                'route': alt_names, 'metric': alt_result[0].metric, 'rec_path_id': rec_path_id
-                            })
+                    excluded_result = self._query_route_without_edges(
+                        u,
+                        v,
+                        excluded_edges,
+                        memoria_residual,
+                    )
+                    if excluded_result and len(excluded_result) > 0:
+                        excluded_route = excluded_result[0].route
+                        excluded_names = [n.name for n in excluded_route]
+                        segmento_original = [node.name for node in route_objs[idx:idx+l+1]]
+                        if excluded_names != segmento_original:
+                            route_key = tuple(excluded_names)
+                            if route_key not in recovery_routes_seen:
+                                recovery_routes_seen.add(route_key)
+                                recovery_candidates.append({
+                                    'segment_src': u.name,
+                                    'segment_dst': v.name,
+                                    'route': excluded_names,
+                                    'metric': excluded_result[0].metric,
+                                    'width': self._route_bottleneck_width(excluded_route),
+                                    'hops': len(excluded_names) - 1,
+                                })
+
+            recovery_candidates.sort(key=lambda item: (item['hops'], -item['metric'], item['route']))
+            selected_recovery_candidates: list[dict[str, Any]] = []
+            selected_routes: set[tuple[str, ...]] = set()
+            selected_segments: set[tuple[str, str]] = set()
+            for candidate in recovery_candidates:
+                route_key = tuple(candidate['route'])
+                segment_key = tuple(sorted((candidate['segment_src'], candidate['segment_dst'])))
+                if route_key in selected_routes or segment_key in selected_segments:
+                    continue
+                selected_routes.add(route_key)
+                selected_segments.add(segment_key)
+                selected_recovery_candidates.append(candidate)
+                if len(selected_recovery_candidates) >= 2:
+                    break
+
+            for candidate in selected_recovery_candidates:
+                rec_w = int(candidate['width'])
+                alt_names = candidate['route']
+                if rec_w <= 0:
+                    continue
+
+                alt_nodes = [self.net.get_node(name) for name in alt_names]
+                if not self._consume_route_capacity(alt_nodes, w=rec_w):
+                    log.debug(
+                        f"Q-CAST recovery path accepted without residual-capacity reservation: "
+                        f"req_id={req_id} segment={candidate['segment_src']}-{candidate['segment_dst']} "
+                        f"route={alt_names} w={rec_w}"
+                    )
+
+                rec_path_id = self.next_path_id
+                self.next_path_id += 1
+                self.path_w[rec_path_id] = rec_w
+                self.path_route_names[rec_path_id] = alt_names
+                rec_req_id = f"{req_id}__REC_{rec_path_id}"
+                
+                rec_route_path = RoutingPathStatic(
+                    alt_names,
+                    req_id=rec_req_id,
+                    path_id=rec_path_id,
+                    m_v=self._build_fair_m_v(alt_names, w=rec_w),
+                )
+                rec_instructions = next(rec_route_path.compute_paths(self.net))
+                rec_instructions["req_id"] = rec_req_id
+                rec_install_msg = {"cmd": "INSTALL_PATH", "path_id": rec_path_id, "instructions": rec_instructions}
+                
+                for node_name in alt_names:
+                    self._deliver_install_path(self.net.get_node(node_name), rec_install_msg)
+
+                self.path_requests[rec_path_id] = [req_id, rec_req_id]
+
+                self.recovery_paths_info[path_id].append({
+                    'segment_src': candidate['segment_src'],
+                    'segment_dst': candidate['segment_dst'],
+                    'route': alt_names, 'metric': candidate['metric'], 'w': rec_w, 'rec_path_id': rec_path_id
+                })
 
             if not self.recovery_paths_info[path_id] and len(route_objs) > 2:
                 sd_virtual_widths = {
@@ -325,30 +434,38 @@ class QCastController(RoutingController):
                     alt_route = alt_result[0].route
                     alt_names = [n.name for n in alt_route]
                     if alt_names != route_names:
-                        if not self._consume_route_capacity(alt_route, w=1):
+                        rec_w = self._route_bottleneck_width(alt_route)
+                        if rec_w <= 0:
+                            continue
+
+                        if not self._consume_route_capacity(alt_route, w=rec_w):
                             log.debug(
                                 f"Q-CAST fallback recovery accepted without residual-capacity reservation: "
-                                f"req_id={req_id} route={alt_names}"
+                                f"req_id={req_id} route={alt_names} w={rec_w}"
                             )
 
                         rec_path_id = self.next_path_id
                         self.next_path_id += 1
-                        self.path_w[rec_path_id] = 1
+                        self.path_w[rec_path_id] = rec_w
                         self.path_route_names[rec_path_id] = alt_names
+                        rec_req_id = f"{req_id}__REC_{rec_path_id}"
 
-                        rec_route_path = RoutingPathStatic(alt_names, req_id=req_id, path_id=rec_path_id, m_v=self._build_fair_m_v(alt_names, w=1))
+                        rec_route_path = RoutingPathStatic(alt_names, req_id=rec_req_id, path_id=rec_path_id, m_v=self._build_fair_m_v(alt_names, w=rec_w))
                         rec_instructions = next(rec_route_path.compute_paths(self.net))
-                        rec_instructions["req_id"] = req_id
+                        rec_instructions["req_id"] = rec_req_id
                         rec_install_msg = {"cmd": "INSTALL_PATH", "path_id": rec_path_id, "instructions": rec_instructions}
 
                         for node_name in alt_names:
                             self._deliver_install_path(self.net.get_node(node_name), rec_install_msg)
+
+                        self.path_requests[rec_path_id] = [req_id, rec_req_id]
 
                         self.recovery_paths_info[path_id].append({
                             'segment_src': route_objs[0].name,
                             'segment_dst': route_objs[-1].name,
                             'route': alt_names,
                             'metric': alt_result[0].metric,
+                            'w': rec_w,
                             'rec_path_id': rec_path_id,
                         })
 

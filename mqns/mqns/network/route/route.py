@@ -48,14 +48,26 @@ def make_csr[N: Node, C: BaseChannel](
     n = len(nodes)
     node_index = {nd: i for i, nd in enumerate(nodes)}
 
-    rows = np.zeros((2 * len(channels),), dtype=np.int32)
-    cols = np.zeros((2 * len(channels),), dtype=np.int32)
-    data = np.zeros((2 * len(channels),), dtype=np.float64)
-    for i, ch in enumerate(channels):
+    # Parallel channels between the same pair of nodes should not accumulate in
+    # the routing graph. Keep the minimum edge metric for each undirected pair.
+    edge_weights: dict[tuple[int, int], float] = {}
+    for ch in channels:
         assert len(ch.node_list) == 2
         a, b = ch.node_list
         ai, bi = node_index[a], node_index[b]
         w = float(metric_func(ch))
+        if ai == bi:
+            continue
+
+        u, v = sorted((ai, bi))
+        current = edge_weights.get((u, v))
+        if current is None or w < current:
+            edge_weights[(u, v)] = w
+
+    rows = np.zeros((2 * len(edge_weights),), dtype=np.int32)
+    cols = np.zeros((2 * len(edge_weights),), dtype=np.int32)
+    data = np.zeros((2 * len(edge_weights),), dtype=np.float64)
+    for i, ((ai, bi), w) in enumerate(edge_weights.items()):
         # undirected: add both directions
         rows[2 * i + 0], cols[2 * i + 0], data[2 * i + 0] = ai, bi, w
         rows[2 * i + 1], cols[2 * i + 1], data[2 * i + 1] = bi, ai, w

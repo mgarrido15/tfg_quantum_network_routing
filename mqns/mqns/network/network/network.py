@@ -641,11 +641,9 @@ def dibujar_escenario(net) -> None:
         prob = getattr(qc, 'success_prob', 1.0)
         route_nodes = list(qc.node_list) if hasattr(qc, 'node_list') else [qc.node1, qc.node2]
         
-        # Asumo que esta función está definida en otra parte de tu código
         est_fid = estimar_fidelidad_observada_de_ruta(net, route_nodes) 
         labels_enlaces[(u_name, v_name)] = f"P:{prob:.2f}\nF_est:{est_fid:.2f}"
         
-    # MODIFICACIÓN 4: font_size aumentado a 12 (antes 8)
     nx.draw_networkx_edge_labels(G, pos, edge_labels=labels_enlaces, font_color='red', font_size=12)
 
     plt.title("Topología de Red: Capacidad y Fidelidad estimada en nodos/enlaces")

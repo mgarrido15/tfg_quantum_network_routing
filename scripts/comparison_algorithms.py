@@ -323,7 +323,6 @@ for nombre, ctrl_class, route_alg, use_cap, reserve_all in sims:
                         recovery_paths_formateados.append(
                             f"Fallo en {desvio['segment_src']}-{desvio['segment_dst']} -> Usar desvío: {desvio['route']} (Métrica: {desvio['metric']:.2f})"
                         )
-                    break
 
         entry = grouped.get(base_key)
         if entry is None:
