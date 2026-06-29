@@ -153,14 +153,52 @@ class TimingModeSync(TimingMode):
         self.phase = phase
         self.end_time = self.simulator.tc + duration
 
-        # schedule next sync signal
         self.simulator.add_event(func_to_event(self.end_time, self.signal_phase))
 
         log.debug(f"TIME_SYNC: signal {phase.name} phase")
         event = TimingPhaseEvent(phase, t=self.simulator.tc)
-        print(f"DEBUG TIMING: Disparando fase {phase.name} a {len(self.network.all_nodes)} nodos")
         for node in self.network.all_nodes:
             node.handle(event)
+
+        # ======== INICIO PARCHE DE LIMPIEZA (TIME-SLOTTED NETWORK) ========
+        if phase == TimingPhase.P1:
+            if hasattr(self.network, "nodes"):
+                for node in self.network.nodes:
+                    # 1. Resetear las Memorias Cuánticas usando el método oficial
+                    memory = getattr(node, "memory", None)
+                    if memory:
+                        qubits = getattr(memory, "qubits", [])
+                        for q in qubits:
+                            # reset_state() pone el estado a RAW y limpia las flags
+                            q.reset_state()
+                            q.path_id = None
+                            q.active = None
+                            q.entangled_qubit = None
+
+                    # 2. Limpiar el Enrutador (Forwarder)
+                    forwarder = getattr(node, "forwarder", None)
+                    if forwarder:
+                        if hasattr(forwarder, "active_swaps"):
+                            forwarder.active_swaps.clear()
+                        if hasattr(forwarder, "assigned_qubits"):
+                            forwarder.assigned_qubits.clear()
+                        # Si tiene una cola de peticiones, la borramos
+                        if hasattr(forwarder, "requests"):
+                            forwarder.requests.clear()
+                            
+                    # 3. Purgar Capa de Enlace (Apps)
+                    apps = getattr(node, "apps", [])
+                    for app in apps:
+                        # Limpiar diccionarios o listas de qubits asignados
+                        app_assigned = getattr(app, "assigned_qubits", None)
+                        if isinstance(app_assigned, (dict, list)):
+                            app_assigned.clear()
+                        
+                        # Limpiar colas de eventos/peticiones si existen
+                        if hasattr(app, "queue") and hasattr(app.queue, "clear"):
+                            app.queue.clear()
+        # ======== FIN PARCHE DE LIMPIEZA ========
+
 
     @override
     def is_async(self) -> bool:
@@ -203,6 +241,36 @@ class TimingModeSyncQCast(TimingMode):
         event = TimingPhaseEvent(phase, t=self.simulator.tc)
         for node in self.network.all_nodes:
             node.handle(event)
+
+        if phase == TimingPhase.P1:
+            if hasattr(self.network, "nodes"):
+                for node in self.network.nodes:
+                    memory = getattr(node, "memory", None)
+                    if memory:
+                        qubits = getattr(memory, "qubits", [])
+                        for q in qubits:
+                            q.reset_state()
+                            q.path_id = None
+                            q.active = None
+                            q.entangled_qubit = None
+
+                    forwarder = getattr(node, "forwarder", None)
+                    if forwarder:
+                        if hasattr(forwarder, "active_swaps"):
+                            forwarder.active_swaps.clear()
+                        if hasattr(forwarder, "assigned_qubits"):
+                            forwarder.assigned_qubits.clear()
+                        if hasattr(forwarder, "requests"):
+                            forwarder.requests.clear()
+
+                    apps = getattr(node, "apps", [])
+                    for app in apps:
+                        app_assigned = getattr(app, "assigned_qubits", None)
+                        if isinstance(app_assigned, (dict, list)):
+                            app_assigned.clear()
+
+                        if hasattr(app, "queue") and hasattr(app.queue, "clear"):
+                            app.queue.clear()
 
     @override
     def is_async(self) -> bool:

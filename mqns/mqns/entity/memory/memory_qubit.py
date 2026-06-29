@@ -128,6 +128,10 @@ class MemoryQubit:
         """Timestamps used by CutoffScheme"""
 
         self._events: dict[type, Event] = {}
+        self.trace_enabled = False
+        self.trace_label: str | None = None
+        self.trace_history: list[str] = []
+        self.trace_limit = 32
 
     @property
     def state(self) -> QubitState:
@@ -149,6 +153,44 @@ class MemoryQubit:
         self.active = None
         self.purif_rounds = 0
         self._clear_events()
+
+    def enable_trace(self, label: str | None = None) -> None:
+        self.trace_enabled = True
+        if label is not None:
+            self.trace_label = label
+
+    def trace_event(self, label: str, when: Time | None = None, note: str = "") -> None:
+        if not self.trace_enabled:
+            return
+
+        when_sec = getattr(when, "sec", None)
+        when_text = f"{when_sec:.6f}" if isinstance(when_sec, (int, float)) else "n/a"
+        parts = [
+            label,
+            f"t={when_text}",
+            f"addr={self.addr}",
+            f"state={self._state.name}",
+        ]
+        if self.qchannel is not None:
+            parts.append(f"ch={self.qchannel.name}")
+        if self.path_id is not None:
+            parts.append(f"path_id={self.path_id}")
+        if self.path_direction is not None:
+            parts.append(f"dir={self.path_direction.name}")
+        if self.active is not None:
+            parts.append(f"active={self.active}")
+        if note:
+            parts.append(note)
+
+        self.trace_history.append(" | ".join(parts))
+        if len(self.trace_history) > self.trace_limit:
+            self.trace_history.pop(0)
+
+    def trace_dump(self) -> str:
+        header = f"Trace[{self.addr}] label={self.trace_label or 'n/a'}"
+        if not self.trace_history:
+            return header + "\n  <empty>"
+        return header + "\n" + "\n".join(f"  {item}" for item in self.trace_history)
 
     def set_event(self, owner: type, new_event: Event | None) -> None:
         """

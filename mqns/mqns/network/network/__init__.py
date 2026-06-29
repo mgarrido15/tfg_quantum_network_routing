@@ -1,6 +1,5 @@
 from mqns.network.network.network import (
     QuantumNetwork,
-    cargar_topologia_desde_json,
     dibujar_escenario,
     guardar_configuracion
 )
@@ -15,7 +14,6 @@ __all__ = [
     "TimingModeSync",
     "TimingPhase",
     "TimingPhaseEvent",
-    "cargar_topologia_desde_json",
     "dibujar_escenario",
     "guardar_configuracion",
 ]

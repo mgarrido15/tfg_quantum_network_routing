@@ -30,16 +30,8 @@ def obtener_prob_y_fidelidad_de_ruta(net: Any, ruta: list) -> tuple[float, float
         nodo_b = ruta[i + 1]
 
         # Buscar el canal cuántico entre estos dos nodos
-        qc = None
-        for ch in getattr(net, "qchannels", []):
-            if hasattr(ch, "node_list") and len(ch.node_list) == 2:
-                n1, n2 = ch.node_list
-            else:
-                n1 = getattr(ch, "node1", None)
-                n2 = getattr(ch, "node2", None)
-            if (n1 == nodo_a and n2 == nodo_b) or (n1 == nodo_b and n2 == nodo_a):
-                qc = ch
-                break
+        canales = net.get_qchannels_between(nodo_a.name, nodo_b.name)
+        qc = canales[0] if canales else None
 
         if qc is None:
             return 0.0, 0.0
@@ -125,7 +117,7 @@ def construir_resultados_qcast(controller: Any, solicitudes: list, attempts_per_
                 "hops": info.get("hops", 0),
                 "route_success_prob": info.get("route_success_prob", 0.0),
                 "route_fidelity": info.get("route_fidelity", 0.0),
-                "route_width": info.get("width", 0),
+                "route_width": info.get("w_asignado", 0),
                 "attempts": attempts_per_route,
                 "successes": success_count.get(req_id, 0),
                 "observed_fidelity": (
@@ -267,7 +259,7 @@ def imprimir_info_rutas_detallada(
             print(f"    - Probabilidad observada: {observed_prob:.4f}")
             print(f"    - Fidelidad: {fid:.4f}")
             print(f"    - Fidelidad observada: {observed_fid:.4f}")
-            print(f"    - Memoria minima: {width}")
+            print(f"    - Memoria minima: {info.get('w_asignado', 0)}")
             if install_ok > 0 or install_fail > 0:
                 print(f"    - Instalacion canales OK/FALLA: {install_ok}/{install_fail}")
             if metric is not None:

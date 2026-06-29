@@ -101,11 +101,11 @@ def run_qcast_sim():
         })
 
     counters = LinkLayerCounters.aggregate(net.nodes)
-    return construir_resultados_qcast(ctrl, solicitudes_formateadas, DEFAULT_ATTEMPTS), solicitudes_formateadas, counters
+    return construir_resultados_qcast(ctrl, solicitudes_formateadas, DEFAULT_ATTEMPTS), solicitudes_formateadas, counters, ctrl
 
 # Ejecución
 print("Iniciando simulación Q-CAST...")
-resultados_qcast, reqs, counters = run_qcast_sim()
+resultados_qcast, reqs, counters, ctrl = run_qcast_sim()
 
 print("\n--- RESULTADOS FINALES ---")
 throughput = counters.n_etg / counters.n_attempts if counters.n_attempts > 0 else 0.0
@@ -113,5 +113,10 @@ print(f"Tasa de éxito (n_etg/n_attempts): {throughput:.4f} EPS")
 print(f"  n_etg={counters.n_etg}, n_attempts={counters.n_attempts}")
 eps = counters.n_etg / LIMIT_VAL
 print(f"Throughput Global (E2E Successful Requests): {eps:.4f} EPS")
+
+print("\n--- INSTRUMENTACIÓN RECOVERY Q-CAST ---")
+print(f"Recuperaciones P4 aplicadas: {getattr(ctrl, 'p4_recovery_applied', 0)}")
+print(f"Paths principales por request: {getattr(ctrl, 'main_paths_by_req', {})}")
+print(f"Recovery paths por path principal: {getattr(ctrl, 'recovery_paths_info', {})}")
 
 # Aquí podrías añadir los bloques de Dijkstra siguiendo la misma lógica

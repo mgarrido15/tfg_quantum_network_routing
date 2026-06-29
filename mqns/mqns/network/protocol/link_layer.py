@@ -19,6 +19,7 @@ import uuid
 from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass
+import traceback
 from typing import Literal, TypedDict, cast, override
 
 from mqns.entity.cchannel import ClassicChannel, ClassicPacket, RecvClassicPacket
@@ -33,13 +34,14 @@ from mqns.network.protocol.event import (
     QubitEntangledEvent,
     QubitReleasedEvent,
 )
-from mqns.utils import json_encodable, log, rng
+from mqns.utils import json_encodable, log, random, rng
 
 
 class ReserveMsg(TypedDict):
     cmd: Literal["RESERVE_QUBIT", "RESERVE_QUBIT_OK"]
     path_id: int | None
     key: str
+    qchannel_name: str
 
 
 @dataclass
@@ -188,7 +190,6 @@ class LinkLayer(Application[QNode]):
         Upon entering INTERNAL phase: do nothing.
         """
         if event.phase in (TimingPhase.EXTERNAL, TimingPhase.P3):
-            self.memory.clear()
             for (qchannel, path_id), (neighbor, _) in self.active_channels.items():
                 self.run_active_channel(qchannel, path_id, neighbor)
 
@@ -283,16 +284,85 @@ class LinkLayer(Application[QNode]):
         Notes:
             - Qubits assigned to memory are retrieved using the channel's name.
             - Qubit reservations are spaced out in time using a fixed ``attempt_rate``.
+            - **Continuous Reassignment (NEW)**: If insufficient qubits assigned to this channel,
+              automatically assign unallocated RAW qubits to the channel for this cycle.
 
         """
+        all_qubits = [q for q, _ in self.memory._storage]
+        log.debug(f"{self.node}: TOTAL QUBITS EN MEMORIA: {len(all_qubits)}, time={self.simulator.tc.sec:.1f}")
+        
+        # 2. Buscamos los que coinciden con el canal
         qubits = list(self.memory.find(lambda *_: True, qchannel=qchannel))
-        log.debug(f"{self.node}: {qchannel.name} has assigned qubits: {qubits}")
+        log.debug(f"{self.node}: QUBITS ASIGNADOS AL CANAL {qchannel.name}: {len(qubits)}")
+        if qubits:
+            for qb, _ in qubits:
+                log.debug(f"  Qubit {qb.addr}: qchannel={getattr(qb, 'qchannel', None)}, path_id={getattr(qb, 'path_id', None)}, state={qb.state.name}")
+        
+        # NUEVO: Si no hay suficientes qubits asignados, asignamos qubits RAW sin canal
+        # para permitir reasignación continua en cada ciclo
+        if len(qubits) == 0:
+            unallocated_raw = [q for q, _ in self.memory._storage 
+                              if q.state == QubitState.RAW 
+                              and getattr(q, 'qchannel', None) is None
+                              and getattr(q, 'path_id', None) is None]
+            log.debug(f"{self.node}: Found {len(unallocated_raw)} unallocated RAW qubits, path_id={path_id}")
+            if unallocated_raw:
+                # Asignamos todos los disponibles (o un máximo razonable) para este ciclo
+                # Limit to avoid exhausting memory all at once
+                max_per_cycle = min(len(unallocated_raw), 10)  # Reasonable batch size
+                for q in unallocated_raw[:max_per_cycle]:
+                    q.qchannel = qchannel
+                    q.path_id = path_id
+                    q.enable_trace(f"{self.node.name}:path={path_id}")
+                    q.trace_event("run_active_channel_continuous_reassign", self.simulator.tc, 
+                                 note=f"qchannel={qchannel.name} cycle_reassignment")
+                qubits = [(q, None) for q in unallocated_raw[:max_per_cycle]]
+                log.debug(f"{self.node}: Reassigned {len(qubits)} unallocated RAW qubits to {qchannel.name} for continuous flow")
+            else:
+                log.debug(f"{self.node}: No unallocated RAW qubits found for {qchannel.name}, path_id={path_id}")
+        
         for qb, data in qubits:
-            if qb.path_id != path_id or qb.state != QubitState.RAW:
-                continue
-            assert qb.active is None
-            assert data is None, f"{self.node}: qubit {qb} has data {data}"
-            self.start_reservation(next_hop, qchannel, qb)
+            log.debug(f"{self.node}: Revisando qubit {qb.addr} - Estado: {qb.state.name}, PathID: {getattr(qb, 'path_id', 'None')}")
+            
+            # FIXED: Allow qubits that either:
+            # 1. Have the correct path_id and are RAW (primary case)
+            # 2. Have the correct path_id and are ACTIVE (already reserved for this path - don't start new reservation)
+            # 3. Have NO path_id yet but are in RAW state (unallocated qubit, can be assigned to any path)
+            qubit_path_id = getattr(qb, 'path_id', None)
+            is_correct_path = (qubit_path_id == path_id)
+            is_unallocated = (qubit_path_id is None)
+
+            # Acceptable handling:
+            # - If qubit belongs to this path and is RAW -> start reservation.
+            # - If qubit belongs to this path and is ACTIVE -> already reserved, skip.
+            # - If qubit unallocated and RAW -> allocate to this path and start reservation.
+            if is_correct_path:
+                if qb.state == QubitState.RAW:
+                    qb.enable_trace(f"{self.node.name}:path={path_id}")
+                    qb.trace_event("run_active_channel_selected", self.simulator.tc, note=f"qchannel={qchannel.name}")
+                    self.start_reservation(next_hop, qchannel, qb)
+                elif qb.state == QubitState.ACTIVE:
+                    # Already has a pending reservation for this key; do nothing.
+                    continue
+                else:
+                    # Unexpected state for a path-allocated qubit, fallthrough to warning below.
+                    pass
+            elif is_unallocated and qb.state == QubitState.RAW:
+                # This qubit is free, assign it to our path and start reservation
+                qb.path_id = path_id
+                qb.enable_trace(f"{self.node.name}:path={path_id}")
+                qb.trace_event("run_active_channel_assigned", self.simulator.tc, note=f"qchannel={qchannel.name}")
+                self.start_reservation(next_hop, qchannel, qb)
+            else:
+                stack = " | ".join(
+                    f"{frame.name}@{frame.filename.rsplit('\\', 1)[-1]}:{frame.lineno}"
+                    for frame in traceback.extract_stack(limit=8)[:-1]
+                )
+                trace_dump = qb.trace_dump() if getattr(qb, "trace_enabled", False) else "<trace disabled>"
+                log.warning(
+                    f"{self.node}: Qubit {qb.addr} descartado (path_id={qubit_path_id}, path_id_esperado={path_id}, estado={qb.state.name}, t={self.simulator.tc.sec:.6f})\n"
+                    f"stack={stack}\n{trace_dump}"
+                )
 
     def start_reservation(self, next_hop: QNode, qchannel: QuantumChannel, qubit: MemoryQubit):
         """
@@ -324,8 +394,9 @@ class LinkLayer(Application[QNode]):
         qubit.state, qubit.active = QubitState.ACTIVE, key
         self.pending_init_reservation[key] = (qchannel, next_hop, qubit)
         log.debug(f"{self.node}: start reservation key={key} dst={next_hop} addr={qubit.addr} path={qubit.path_id}")
+        qubit.trace_event("start_reservation", self.simulator.tc, note=f"key={key} next_hop={next_hop.name}")
 
-        msg: ReserveMsg = {"cmd": "RESERVE_QUBIT", "path_id": qubit.path_id, "key": key}
+        msg: ReserveMsg = {"cmd": "RESERVE_QUBIT", "path_id": qubit.path_id, "key": key, "qchannel_name": qchannel.name}
         self.node.send_cpacket(next_hop, ClassicPacket(msg, src=self.node, dest=next_hop))
 
     def handle_reserve_req(self, msg: ReserveMsg, cchannel: ClassicChannel):
@@ -338,7 +409,14 @@ class LinkLayer(Application[QNode]):
         """
         from_node = cchannel.find_peer(self.node)
         assert type(from_node) is QNode
-        qchannel = self.node.get_qchannel(from_node)
+        
+        # NUEVO: Leer el hilo exacto desde el mensaje
+        qchannel_name = msg.get("qchannel_name")
+        qchannel = self.node.network.get_qchannel(qchannel_name)
+        if qchannel is None:
+            log.error(f"{self.node}: Canal {qchannel_name} no encontrado para reserva.")
+            return
+        
         req = ReservationRequest(msg["key"], msg["path_id"], cchannel, from_node, qchannel)
         if not self.try_accept_reservation(req):
             self.fifo_reservation_req.append(req)
@@ -370,7 +448,8 @@ class LinkLayer(Application[QNode]):
         log.debug(f"{self.node}: accept reservation key={req.key} src={req.from_node} addr={qubit.addr} path={qubit.path_id}")
         qubit.state = QubitState.ACTIVE  # cannot go directly from RAW to RESERVED
         qubit.state, qubit.active = QubitState.RESERVED, req.key
-        msg: ReserveMsg = {"cmd": "RESERVE_QUBIT_OK", "path_id": req.path_id, "key": req.key}
+        qubit.trace_event("reservation_accepted", self.simulator.tc, note=f"key={req.key}")
+        msg: ReserveMsg = {"cmd": "RESERVE_QUBIT_OK", "path_id": req.path_id, "key": req.key, "qchannel_name": req.qchannel.name}
         req.cchannel.send(ClassicPacket(msg, src=self.node, dest=req.from_node), next_hop=req.from_node)
         return True
 
@@ -384,34 +463,62 @@ class LinkLayer(Application[QNode]):
         (qchannel, next_hop, qubit) = self.pending_init_reservation.pop(key)
         assert qubit.active == key
         qubit.state = QubitState.RESERVED
+        qubit.trace_event("reservation_confirmed", self.simulator.tc, note=f"qchannel={qchannel.name}")
         self.generate_entanglement(qchannel, next_hop, qubit)
 
     def generate_entanglement(self, qchannel: QuantumChannel, next_hop: QNode, qubit: MemoryQubit):
         """
-        Schedule a successful entanglement attempt using skip-ahead sampling.
+        Schedule a successful entanglement attempt using Monte Carlo probability (random).
 
         Args:
             qchannel: The quantum channel over which entanglement is to be generated.
             next_hop: The neighboring node with which the entanglement is attempted.
             qubit: The memory qubit used for this attempt.
         """
+        # 1. Tirar el dado probabilístico para este único disparo
+        controller = getattr(getattr(self.node, 'network', None), 'controller', None)
+        if rng.random() > qchannel.link_arch.success_prob:
+            # El fotón se perdió en la fibra en este ciclo.
+            if controller is not None and hasattr(controller, 'record_local_entanglement'):
+                controller.record_local_entanglement(qchannel.name, success=False, time=self.simulator.tc)
 
-        k = 1
-        # Calculate which attempt would succeed.
-        success = rng.random() < qchannel.link_arch.success_prob
+            # Release this reservation immediately so the same channel can retry
+            # in later cycles instead of remaining stuck in RESERVED/ACTIVE.
+            failed_key = qubit.active
+            qubit.reset_state()
+            qubit.trace_event("entanglement_failed_local", self.simulator.tc, note=f"qchannel={qchannel.name}")
 
-        if not success:
-            log.debug(f"{self.node}: Intento fallido, esperando al siguiente turno.")
+            # Best-effort release of the paired reservation on the neighbor side
+            # (same reservation key on the same qchannel).
+            if failed_key is not None:
+                peer_matches = list(
+                    next_hop.memory.find(
+                        lambda q, _v: getattr(q, "active", None) == failed_key
+                        and getattr(q, "qchannel", None) == qchannel
+                    )
+                )
+                for remote_qubit, _ in peer_matches:
+                    remote_qubit.reset_state()
+                    remote_qubit.trace_event(
+                        "entanglement_failed_local_peer_release",
+                        self.simulator.tc,
+                        note=f"from={self.node.name}",
+                    )
             return
 
-        # Calculate when would the k-th attempt (1-based) succeed.
-        # TODO space out EPRs on a qchannel by attempt_interval or qchannel.bandwidth
+        if controller is not None and hasattr(controller, 'record_local_entanglement'):
+            controller.record_local_entanglement(qchannel.name, success=True, time=self.simulator.tc)
+
+        # 2. Si llegamos aquí, el fotón sobrevivió y el intento fue un éxito.
+        # Como es un solo disparo en este turno, el intento exitoso es el número 1.
+        k = 1
+
+        # 3. Calcular los tiempos de llegada y crear el objeto EPR
         epr, t_notify_a, t_notify_b = qchannel.link_arch.make_epr(
-            1, self.simulator.tc, key=qubit.active, src=self.node, dst=next_hop
+            k, self.simulator.tc, key=qubit.active, src=self.node, dst=next_hop
         )
 
-        # If the network uses SYNC timing mode but the successful attempt would exceed the current EXTERNAL phase,
-        # the EPR would not arrive in time, and therefore is not scheduled.
+        # 4. Comprobar si el tiempo de llegada sigue dentro de la ventana permitida
         if not self.node.timing.is_external(max(t_notify_a, t_notify_b)):
             log.debug(
                 f"{self.node}: skip prepare EPR {epr.name} key={epr.key} dst={epr.dst} attempts={k} "
@@ -419,8 +526,7 @@ class LinkLayer(Application[QNode]):
             )
             return
 
-        # If the network uses ASYNC timing mode or the successful attempt can complete within the current EXTERNAL phase,
-        # schedule the EPR arrival on both nodes via LinkArchSuccessEvents.
+        # 5. Programar la llegada exitosa del entrelazamiento en ambos nodos
         log.debug(
             f"{self.node}: prepare EPR {epr.name} key={epr.key} dst={epr.dst} attempts={k} "
             f"notify-times={t_notify_a},{t_notify_b}"
@@ -450,6 +556,7 @@ class LinkLayer(Application[QNode]):
             pass
 
         qubit.state = QubitState.ENTANGLED0
+        qubit.trace_event("entanglement_arrived", self.simulator.tc, note=f"epr={epr.name} primary={is_primary}")
         self.simulator.add_event(QubitEntangledEvent(self.node, neighbor, qubit, t=self.simulator.tc))
 
     def handle_decoh_rel(self, event: QubitDecoheredEvent | QubitReleasedEvent) -> bool:
@@ -457,7 +564,9 @@ class LinkLayer(Application[QNode]):
 
         qubit = event.qubit
         log.debug(f"{self.node}: qubit {'decohered' if is_decoh else 'released'} addr={qubit.addr} old-key={qubit.active}")
+        self.memory.read(qubit.addr, remove=True)
         qubit.state, qubit.active = QubitState.RAW, None
+        qubit.trace_event("memory_release", self.simulator.tc, note=f"reason={'decohered' if is_decoh else 'released'}")
 
         assert qubit.qchannel is not None
         ac = self.active_channels.get((qubit.qchannel, qubit.path_id))
@@ -479,8 +588,6 @@ class LinkLayer(Application[QNode]):
         next_hop, _ = ac
         if self.node.timing.is_async():
             self.start_reservation(next_hop, qubit.qchannel, qubit)
-        # SYNC timing mode
-        elif is_decoh:
-            raise RuntimeError(f"{self.node}: unexpected QubitDecoheredEvent in SYNC timing mode, (t_ext+t_int) too high")
+        # SYNC timing mode retries happen on the next active-channel pass.
 
         return True

@@ -25,8 +25,9 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from typing import cast, overload
+import math
 import json
+from typing import cast, overload, TypeVar, Any
 
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -46,16 +47,18 @@ from mqns.simulator import Simulator
 from mqns.utils import rng
 from mqns.utils import log
 
+C = TypeVar("C", bound=BaseChannel)
 
-def _save_channel[C: BaseChannel](l: list[C], d: dict[tuple[str, str], C], ch: C):
+def _save_channel(l: list[C], d: dict[tuple[str, str], list[C]], ch: C):
     l.append(ch)
-    if len(ch.node_list) != 2:
+    node_list = getattr(ch, 'node_list', [])
+    if len(node_list) != 2:
         return
-    a, b = sorted((node.name for node in cast(list[Node], ch.node_list)))
-    d[(a, b)] = ch
+    a, b = sorted((node.name for node in cast(list[Node], node_list)))
+    d.setdefault((a, b), []).append(ch)
 
 
-def _get_channel[C: BaseChannel](l: list[C], d: dict[tuple[str, str], C], q: tuple[str, ...]):
+def _get_channel(l: list[C], d: dict[tuple[str, str], list[C]], q: tuple[str, ...]) -> C:
     if len(q) == 1:
         name = q[0]
         for ch in l:
@@ -65,8 +68,10 @@ def _get_channel[C: BaseChannel](l: list[C], d: dict[tuple[str, str], C], q: tup
 
     a, b = sorted(q)
     try:
-        return d[(a, b)]
+        return d[(a, b)][0]
     except KeyError:
+        raise IndexError(f"channel between {a} and {b} does not exist")
+    except IndexError:
         raise IndexError(f"channel between {a} and {b} does not exist")
 
 
@@ -94,6 +99,8 @@ class QuantumNetwork:
 
         self.timing = timing
         """Network-wide application timing mode."""
+        self.simulator: Simulator
+        """Simulator instance (assigned during install)."""
         self.epr_type = epr_type
         """Network-wide entanglement type."""
 
@@ -104,10 +111,10 @@ class QuantumNetwork:
         self._node_by_name: dict[str, QNode] = {}
         self.qchannels: list[QuantumChannel] = []
         """List of quantum channels."""
-        self._qchannel_by_ends: dict[tuple[str, str], QuantumChannel] = {}
+        self._qchannel_by_ends: dict[tuple[str, str], list[QuantumChannel]] = {}
         self.cchannels: list[ClassicChannel] = []
         """List of classic channels."""
-        self._cchannel_by_ends: dict[tuple[str, str], ClassicChannel] = {}
+        self._cchannel_by_ends: dict[tuple[str, str], list[ClassicChannel]] = {}
 
         if topo is not None:
             self._populate_from_topo(topo, classic_topo)
@@ -134,6 +141,17 @@ class QuantumNetwork:
 
         if topo.controller:
             self.set_controller(topo.controller)
+    
+    def get_qchannels_between(self, a: str, b: str) -> list[QuantumChannel]:
+        """
+        Recupera TODOS los canales cuánticos paralelos (Multigrafo) entre dos nodos.
+        """
+        target_nodes = {a, b}
+        canales_paralelos = []
+        for ch in self.qchannels:
+            if {node.name for node in ch.node_list} == target_nodes:
+                canales_paralelos.append(ch)
+        return canales_paralelos
 
     def _ensure_not_installed(self) -> None:
         """
@@ -321,7 +339,7 @@ class QuantumNetwork:
             prob = link_data.get("prob", 1.0)
             fidelity = link_data.get("fidelity", 0.99)
             # Find the channel
-            qc = self.get_qchannel(u, v)
+            qc: Any = self.get_qchannel(u, v)
             if qc:
                 qc.success_prob = prob
                 qc._fidelity = fidelity
@@ -340,13 +358,10 @@ class QuantumNetwork:
         """
         Build the complete topology from a JSON file, creating nodes and channels.
         
-        This method builds the network from scratch based on the JSON configuration,
-        unlike load_topology_from_json which requires nodes to already exist.
-        
         The JSON should have the structure:
         {
             "nodos": [{"id": "n1", "capacity": 10}, ...],
-            "enlaces": [{"u": "n1", "v": "n2", "prob": 0.9, "fidelity": 0.95}, ...],
+            "enlaces": [{"u": "n1", "v": "n2", "prob": 0.9, "fidelity": 0.95, "channels": 3}, ...],
             "solicitudes": [{"src": "n1", "dst": "n2"}, ...]
         }
         """
@@ -372,82 +387,102 @@ class QuantumNetwork:
             self.add_node(node)
             nodes.append(node)
         
-        # Create quantum channels between nodes
+        # Create quantum channels between nodes.
+        # Repeated entries for the same pair create parallel channels.
+        link_parallel_index: dict[tuple[str, str], int] = {}
         for link_data in config.get("enlaces", []):
             u_name = link_data["u"]
             v_name = link_data["v"]
-            prob = link_data.get("prob")
-            fidelity = link_data.get("fidelity", None)  # None para calcular basado en distancia
+            prob_val = link_data.get("prob")
+            fidelity = link_data.get("fidelity", None)
             length = link_data.get("length", 3.0)
             alpha = link_data.get("alpha", 0.2)
             eta_s = link_data.get("eta_s", 0.7)
             eta_d = link_data.get("eta_d", 0.8)
             transfer_error = link_data.get("transfer_error", "DEPOLAR:0.01")
 
+            calc_arch: Any = LinkArchSim()
+            prob: float
+            if prob_val is None:
+                prob = cast(float, calc_arch._compute_success_prob(
+                        length=length, alpha=alpha, eta_s=eta_s, eta_d=eta_d
+                    ))
+            else:
+                prob = float(prob_val)
+
+            if prob < 0.5:
+                modeled_prob = cast(float, calc_arch._compute_success_prob(
+                    length=length, alpha=alpha, eta_s=eta_s, eta_d=eta_d
+                ))
+                prob = max(prob, modeled_prob)
+
+            if fidelity is None:
+                fidelity = math.exp(-alpha * length)
+            
+            # --- NUEVO: Leer la capacidad de multiplexación (Por defecto 1) ---
+            num_canales = link_data.get("channels", 1)
+            link_key = tuple(sorted((u_name, v_name)))
+
             u_node = self.get_node(u_name)
             v_node = self.get_node(v_name)
 
             if u_node and v_node:
-                # Create quantum channel with realistic physical parameters.
-                ch_name = f"QC_{u_name}_{v_name}"
-                link_arch = LinkArchSim()
-                qc = QuantumChannel(
-                    name=ch_name,
-                    alpha=alpha,
-                    length=length,
-                    transfer_error=transfer_error,
-                    link_arch=link_arch,
-                )
 
-                if prob is None:
-                    prob = link_arch._compute_success_prob(
-                        length=length,
+                # 2. BUCLE MULTIGRAFO: Crear los canales físicos paralelos
+                for i in range(num_canales):
+                    ch_index = link_parallel_index.get(link_key, 0)
+                    link_parallel_index[link_key] = ch_index + 1
+
+                    # Nombres únicos por cada hilo (ej. QC_n1_n2_ch0, QC_n1_n2_ch1, ...)
+                    ch_name = f"QC_{u_name}_{v_name}_ch{ch_index}"
+                    
+                    # Instanciar la arquitectura física e INYECTAR los parámetros de atenuación
+                    link_arch: Any = LinkArchSim()
+                    link_arch.length = length
+                    link_arch.alpha = alpha
+                    link_arch.eta_s = eta_s
+                    link_arch.eta_d = eta_d
+                    link_arch.success_prob = prob
+                    link_arch.p_s = prob
+
+                    qc: Any = QuantumChannel(
+                        name=ch_name,
                         alpha=alpha,
-                        eta_s=eta_s,
-                        eta_d=eta_d,
-                    )
-                elif prob < 0.5:
-                    modeled_prob = link_arch._compute_success_prob(
                         length=length,
-                        alpha=alpha,
-                        eta_s=eta_s,
-                        eta_d=eta_d,
+                        drop_rate=(1.0 - prob),
+                        transfer_error=transfer_error,
+                        link_arch=link_arch,
                     )
-                    prob = max(prob, modeled_prob)
+                    
+                    # Asignamos directamente la probabilidad al canal (por si el simulador lo lee de aquí)
+                    qc.success_prob = prob
+                    qc.p_s = prob
+                    qc.fidelity = fidelity
+                    qc._fidelity = fidelity
 
-                # Calculate fidelity based on distance if not provided
-                if fidelity is None:
-                    import math
-                    fidelity = math.exp(-alpha * length)
-                
-                qc.success_prob = prob
-                qc._fidelity = fidelity
+                    # Add channel to nodes
+                    u_node.add_qchannel(qc)
+                    v_node.add_qchannel(qc)
 
-                # Add channel to nodes
-                u_node.add_qchannel(qc)
-                v_node.add_qchannel(qc)
-
-                # Add channel to network
-                self.add_qchannel(qc)
-                # Assign memory qubits for this channel at both endpoints (default 1 each)
-                try:
-                    qc.assign_memory_qubits()
-                    log.debug(f"Assigned memory qubits for channel {qc.name} on nodes {u_name},{v_name}")
-                except Exception as e:
-                    log.debug(f"Failed to assign memory qubits for channel {qc.name}: {e}")
-                
-                # Create corresponding classic channel for control plane communication
-                from mqns.entity.cchannel import ClassicChannel
-                cc_name = f"CC_{u_name}_{v_name}"
-                cc = ClassicChannel(cc_name)
-                u_node.add_cchannel(cc)
-                v_node.add_cchannel(cc)
-                self.add_cchannel(cc)
+                    # Add channel to network
+                    self.add_qchannel(qc)
+                    
+                    # Assign memory qubits for this specific physical channel
+                    try:
+                        qc.assign_memory_qubits()
+                        log.debug(f"Assigned memory qubits for channel {qc.name} on nodes {u_name},{v_name}")
+                    except Exception as e:
+                        log.debug(f"Failed to assign memory qubits for channel {qc.name}: {e}")
+                    
+                    # Create corresponding classic channel
+                    cc_name = f"CC_{u_name}_{v_name}_ch{ch_index}"
+                    cc = ClassicChannel(cc_name)
+                    u_node.add_cchannel(cc)
+                    v_node.add_cchannel(cc)
+                    self.add_cchannel(cc)
         
-        # Create control plane: connect first node (controller) to all other nodes via classic channels
-        # This ensures the controller can send INSTALL_PATH messages to any node
+        # Create control plane: connect first node (controller) to all other nodes
         if nodes:
-            from mqns.entity.cchannel import ClassicChannel
             controller_node = nodes[0]  # First node acts as controller
             for other_node in nodes[1:]:
                 cc_name = f"CC_CTRL_{controller_node.name}_{other_node.name}"
@@ -563,18 +598,7 @@ class QuantumNetwork:
 
 
 
-def cargar_topologia_desde_json(filename: str) -> dict:
-    """Carga la topología desde un archivo JSON y construye una red cuántica.
-    """
-    print(f"Cargando topología desde {filename}...")
-    
-    with open(filename, 'r', encoding='utf-8') as f:
-        config = json.load(f)
-    
-    return config
-
-
-def dibujar_escenario(net: QuantumNetwork) -> None:
+def dibujar_escenario(net) -> None:
     """Dibuja la topología de la red cuántica con nodos, enlaces, probabilidades y fidelidades.
     """
     G = nx.Graph()
@@ -584,9 +608,8 @@ def dibujar_escenario(net: QuantumNetwork) -> None:
     labels_nodos = {}
     for node in nodos_lista:
         cap = getattr(node.memory, 'capacity', 10)
-        node_fid = getattr(node, 'node_fidelity', 1.0)
         G.add_node(node.name, capacity=cap)
-        labels_nodos[node.name] = f"{node.name}\n(W:{cap})\nF:{node_fid:.2f}"
+        labels_nodos[node.name] = f"{node.name}\n(W:{cap})"
     
     channels = getattr(net, 'qchannels', getattr(net, '_qchannels', []))
     for qc in channels:
@@ -598,13 +621,17 @@ def dibujar_escenario(net: QuantumNetwork) -> None:
         prob = getattr(qc, 'success_prob', 1.0)
         G.add_edge(u_name, v_name, weight=prob)
 
-    pos = nx.spring_layout(G, seed=42)
+
+    pos = nx.spring_layout(G, seed=42, k=0.3)
     
     plt.figure(figsize=(12, 8))
-    nx.draw_networkx_nodes(G, pos, node_size=1500, node_color='lightblue', edgecolors='black')
-    nx.draw_networkx_labels(G, pos, labels=labels_nodos, font_size=9, font_weight='bold')
+    
+    nx.draw_networkx_nodes(G, pos, node_size=3500, node_color='lightblue', edgecolors='black')
+    
+    nx.draw_networkx_labels(G, pos, labels=labels_nodos, font_size=14, font_weight='bold')
 
     nx.draw_networkx_edges(G, pos, width=2, alpha=0.5)
+    
     labels_enlaces = {}
     for qc in channels:
         if hasattr(qc, 'node_list'):
@@ -613,9 +640,13 @@ def dibujar_escenario(net: QuantumNetwork) -> None:
             u_name, v_name = qc.node1.name, qc.node2.name
         prob = getattr(qc, 'success_prob', 1.0)
         route_nodes = list(qc.node_list) if hasattr(qc, 'node_list') else [qc.node1, qc.node2]
-        est_fid = estimar_fidelidad_observada_de_ruta(net, route_nodes)
+        
+        # Asumo que esta función está definida en otra parte de tu código
+        est_fid = estimar_fidelidad_observada_de_ruta(net, route_nodes) 
         labels_enlaces[(u_name, v_name)] = f"P:{prob:.2f}\nF_est:{est_fid:.2f}"
-    nx.draw_networkx_edge_labels(G, pos, edge_labels=labels_enlaces, font_color='red', font_size=8)
+        
+    # MODIFICACIÓN 4: font_size aumentado a 12 (antes 8)
+    nx.draw_networkx_edge_labels(G, pos, edge_labels=labels_enlaces, font_color='red', font_size=12)
 
     plt.title("Topología de Red: Capacidad y Fidelidad estimada en nodos/enlaces")
     plt.axis('off')

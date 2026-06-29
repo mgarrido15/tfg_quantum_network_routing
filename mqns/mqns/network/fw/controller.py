@@ -25,9 +25,10 @@ class RoutingController(Application[Controller]):
         """
         Compute routing path(s) and send install commands to nodes.
         """
-        if rp.req_id < 0:
+        if isinstance(rp.req_id, int) and rp.req_id < 0:
             rp.req_id = self.next_req_id
-        self.next_req_id = max(self.next_req_id, rp.req_id + 1)
+        if isinstance(rp.req_id, int):
+            self.next_req_id = max(self.next_req_id, rp.req_id + 1)
 
         if rp.path_id < 0:
             rp.path_id = self.next_path_id

@@ -746,6 +746,27 @@ class Forwarder(ForwarderClassicMixin, Application[QNode]):
                     self.remote_swapped_eprs[cast(str, new_epr_name)] = new_epr
                 self.waiting_su[qubit.addr] = (msg, fib_entry)
                 return
+
+            if qubit.state == QubitState.RAW:
+                log.warning(
+                    f"{self.node}: unexpected qubit state {qubit.state} for SWAP_UPDATE; clearing raw qubit"
+                )
+                self.memory.read(qubit.addr, remove=True)
+                qubit.reset_state()
+                return
+
+            if qubit.state not in (
+                QubitState.ENTANGLED1,
+                QubitState.PURIF,
+                QubitState.PENDING,
+                QubitState.ELIGIBLE,
+            ):
+                log.warning(
+                    f"{self.node}: unexpected qubit state {qubit.state} for SWAP_UPDATE; releasing"
+                )
+                self.release_qubit(qubit, need_remove=True)
+                return
+
             self.parallel_swappings.pop(epr_name, None)
             self._su_sequential(msg, fib_entry, qubit, new_epr, maybe_purif=(fib_entry.own_swap_rank > sender_rank))
         elif fib_entry.own_swap_rank == sender_rank and epr_name in self.parallel_swappings:
@@ -928,5 +949,18 @@ class Forwarder(ForwarderClassicMixin, Application[QNode]):
         if need_remove:
             self.memory.read(qubit.addr, remove=True)
 
-        qubit.state = QubitState.RELEASE
-        self.simulator.add_event(QubitReleasedEvent(self.node, qubit, t=self.simulator.tc))
+        if qubit.state == QubitState.RAW or qubit.state == QubitState.RELEASE:
+            return
+
+        try:
+            qubit.trace_event("forwarder_release_begin", self.simulator.tc, note=f"node={self.node.name}")
+            qubit.state = QubitState.RELEASE
+        except ValueError:
+            log.warning(
+                f"{self.node}: release_qubit called on invalid qubit state {qubit.state}; resetting to RAW"
+            )
+            qubit.reset_state()
+            qubit.trace_event("forwarder_release_reset_raw", self.simulator.tc, note=f"node={self.node.name}")
+        else:
+            qubit.trace_event("forwarder_release_done", self.simulator.tc, note=f"node={self.node.name}")
+            self.simulator.add_event(QubitReleasedEvent(self.node, qubit, t=self.simulator.tc))
