@@ -507,7 +507,7 @@ for bar, value in zip(bars, throughputs):
     plt.text(
         bar.get_x() + bar.get_width() / 2,
         bar.get_height(),
-        f"{value:.2f}",
+        f"{value:.4f}",
         ha="center",
         va="bottom",
     )

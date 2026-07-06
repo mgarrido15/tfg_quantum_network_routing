@@ -1,6 +1,7 @@
 import sys
 import os
 import json
+import time
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -31,7 +32,7 @@ from mqns.entity.memory.memory import QuantumMemory
 
 
 LIMIT_VAL = 1000.0  
-SCENARIO_PATH = os.path.join(os.path.dirname(__file__), "..", "escenario_basico.json")
+SCENARIO_PATH = os.path.join(os.path.dirname(__file__), "..", "escenario_grande.json")
 REQUEST_REPEAT = 1
 MEMORY_T_COHERE = 10.0
 
@@ -185,7 +186,11 @@ def ejecutar_simulacion(nombre, controller_class, route_alg=None, use_capacity=T
     net.timing = TimingModeSyncQCast(t1= 1, t2= 1, t3= 1, t4= 1)
     net.timing.install(net)
 
+    tiempo_calculo_rutas = None
     if route_alg is not None:
+        inicio_calculo_rutas = time.perf_counter()
+        net.route = route_alg
+        net.build_route()
         if reserve_all_capacity:
             assign_dijkstra_routes_with_capacity_reserve_all(
                 net, ctrl, solicitudes, obtener_prob_y_fidelidad_de_ruta,
@@ -196,6 +201,7 @@ def ejecutar_simulacion(nombre, controller_class, route_alg=None, use_capacity=T
                 net, ctrl, solicitudes, obtener_prob_y_fidelidad_de_ruta,
                 enforce_capacity=use_capacity,
             )
+        tiempo_calculo_rutas = time.perf_counter() - inicio_calculo_rutas
 
         # Instalamos las rutas estáticas calculadas para que los forwards las ejecuten.
         for req in solicitudes:
@@ -213,10 +219,12 @@ def ejecutar_simulacion(nombre, controller_class, route_alg=None, use_capacity=T
     ciclos_totales = int(LIMIT_VAL / TOTAL_CYCLE_TIME)
 
     sim.run()
+    if tiempo_calculo_rutas is None and ctrl is not None:
+        tiempo_calculo_rutas = getattr(ctrl, "qcast_route_calc_time_total", None)
     resultados = construir_resultados_qcast(ctrl, solicitudes, ciclos_totales)
     counters = LinkLayerCounters.aggregate(net.nodes)
 
-    return resultados, counters, net, solicitudes, ciclos_totales
+    return resultados, counters, net, solicitudes, ciclos_totales, tiempo_calculo_rutas
 
 
 def calcular_fidelidad_media_real(resultados):
@@ -282,7 +290,7 @@ ultima_net = None
 instrumentacion_por_algoritmo = {}
 
 for nombre, ctrl_class, route_alg, use_cap, reserve_all in sims:
-    resultados, counters, net, solicitudes, intentos_reales = ejecutar_simulacion(nombre, ctrl_class, route_alg, use_cap, reserve_all)
+    resultados, counters, net, solicitudes, intentos_reales, tiempo_calculo_rutas = ejecutar_simulacion(nombre, ctrl_class, route_alg, use_cap, reserve_all)
     ultima_net = net
     
     ctrl = getattr(net, "controller", None)
@@ -371,6 +379,7 @@ for nombre, ctrl_class, route_alg, use_cap, reserve_all in sims:
 
     rutas_exportar[nombre] = lista_rutas_agrupada
     rutas_exportar[f"{nombre}_instrumentacion"] = instrumentacion
+    rutas_exportar[f"{nombre}_tiempo_calculo_rutas_segundos"] = tiempo_calculo_rutas
     
     # MÉTRICAS REALES DE RENDIMIENTO
     total_exitos = sum(r.get("successes", 0) for r in resultados)
@@ -379,7 +388,7 @@ for nombre, ctrl_class, route_alg, use_cap, reserve_all in sims:
     # Probabilidad de éxito a nivel de aplicación (basada en los intentos para métricas)
     # Éxitos totales / (Número de peticiones * Ciclos posibles)
     intentos_posibles_totales = len(solicitudes) * intentos_reales
-    app_level_success_prob = total_exitos /  2500 
+    app_level_success_prob = total_exitos /  500 
     
     # Probabilidad de éxito de la capa física (n_etg/n_attempts)
     physical_layer_success_prob = counters.n_etg / 2500 
@@ -428,10 +437,6 @@ if instrumentacion_por_algoritmo:
     
 
 
-# =====================================================================
-# GENERACIÓN DE GRÁFICAS
-# =====================================================================
-
 algoritmos = [
     "Dijkstra\nsalts",
     "Dijkstra\ndistáncia",
@@ -457,7 +462,7 @@ plt.grid(axis="y", linestyle="--", alpha=0.3)
 for bar, value in zip(bars, throughputs):
     plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"{value:.4f}", ha="center", va="bottom")
 plt.tight_layout()
-plt.savefig(os.path.join(output_dir, "throughput.png"), dpi=300)
+plt.savefig(os.path.join(output_dir, "throughput_topologia_grande.png"), dpi=300)
 plt.close()
 
 # Gráfico 2: Probabilidad de Éxito Física
@@ -471,7 +476,7 @@ plt.grid(axis="y", linestyle="--", alpha=0.3)
 for bar, value in zip(bars, physical_success_probs):
     plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"{value:.4f}", ha="center", va="bottom")
 plt.tight_layout()
-plt.savefig(os.path.join(output_dir, "success_probability_global_algoritmos.png"), dpi=300)
+plt.savefig(os.path.join(output_dir, "success_probability_global_algoritmos_topologia_grande.png"), dpi=300)
 plt.close()
 
 # Gráfico 3: Fidelidad Teórica
@@ -485,7 +490,7 @@ plt.grid(axis="y", linestyle="--", alpha=0.3)
 for bar, value in zip(bars, avg_fidelities):
     plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"{value:.4f}", ha="center", va="bottom")
 plt.tight_layout()
-plt.savefig(os.path.join(output_dir, "average_fidelity_global_algoritmos.png"), dpi=300)
+plt.savefig(os.path.join(output_dir, "average_fidelity_global_algoritmos_topologia_grande.png"), dpi=300)
 plt.close()
 
 # Gráfico 4: Parejas S-D con éxito
@@ -498,7 +503,7 @@ for bar, value in zip(bars, sd_pairs_with_success):
     plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"{value}", ha="center", va="bottom")
 
 plt.tight_layout()
-plt.savefig(os.path.join(output_dir, "sd_pairs_with_success.png"), dpi=300)
+plt.savefig(os.path.join(output_dir, "sd_pairs_with_success_topologia_grande.png"), dpi=300)
 plt.close()
 
 rutas_json_path = os.path.join(output_dir, "rutas_asignadas.json")

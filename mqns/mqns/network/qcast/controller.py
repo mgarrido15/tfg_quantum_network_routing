@@ -1,5 +1,6 @@
 import networkx as nx
 import os
+import time
 from typing import Any, cast
 from mqns.entity.cchannel import ClassicPacket
 from mqns.network.network.timing import TimingPhaseEvent
@@ -42,6 +43,8 @@ class QCastController(RoutingController):
         self.local_entanglement_by_cycle: dict[int, dict[str, Any]] = {}
         self.p4_phase_count = 0
         self.p4_recovery_applied = 0
+        self.qcast_route_calc_time_total = 0.0
+        self.qcast_route_calc_runs = 0
 
     def _cycle_from_time(self, time) -> int:
         return int(round(time.sec / 4.0)) if time is not None and hasattr(time, "sec") else 0
@@ -112,7 +115,10 @@ class QCastController(RoutingController):
         # Ejecutamos el enrutamiento en P2
         if phase_name == "P2":
             if self.pending_qcast_queries:
+                inicio_calculo_rutas = time.perf_counter()
                 self._process_all_qcast_requests()
+                self.qcast_route_calc_time_total += time.perf_counter() - inicio_calculo_rutas
+                self.qcast_route_calc_runs += 1
                 # BORRA O COMENTA ESTA LÍNEA PARA QUE NO DESTRUYA LA COLA:
                 # self.pending_qcast_queries.clear() 
         
