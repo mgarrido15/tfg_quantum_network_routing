@@ -8,12 +8,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from mqns.simulator import Simulator
 from mqns.network.network.timing import TimingModeSyncQCast
-from mqns.network.network.network import QuantumNetwork, dibujar_escenario
+from mqns.network.network.network import QuantumNetwork
 from mqns.network.network.reporting import (
     build_request_id,
     obtener_prob_y_fidelidad_de_ruta,
     construir_resultados_qcast,
-    imprimir_resumen_algoritmo,
     imprimir_info_rutas_detallada,
 )
 from mqns.network.route import (
@@ -24,10 +23,17 @@ from mqns.network.route import (
     initialize_virtual_node_capacity,
 )
 from mqns.utils import log
-from mqns.network.qcast.controller import QCastController, QCastFidelityController
+from mqns.network.qcast.controller import QCastController
 from mqns.network.qcast.forwarder import QCastForwarder
 from mqns.network.fw import RoutingPathSingle
 from mqns.network.protocol.link_layer import LinkLayer
+from simulation_utils import (
+    create_simulation_folder,
+    save_graph,
+    save_topology_diagram,
+    save_link_metadata,
+    print_simulation_summary,
+)
 
 DEFAULT_ENTANGLEMENT_ATTEMPTS_PER_ROUTE = 500
 DEFAULT_SIM_TIME = 150.0
@@ -76,7 +82,7 @@ def install_qcast_stack(node, *, controller=None):
     
     apps.append(LinkLayer())
     
-    forwarder = QCastForwarder(k_max=4, ps=1.0, purif_enabled=True, max_purif_rounds=2)
+    forwarder = QCastForwarder(k_max=4, ps=1.0, purif_enabled=True)
     apps.append(forwarder)
     
     node.add_apps(apps)
@@ -352,47 +358,6 @@ imprimir_info_rutas_detallada("Dijkstra distancia (sin capacidad)", controller_d
 
 
 # =====================================================================
-# SIMULACIÓN 5: Q-CAST (con fidelidad)
-# =====================================================================
-print("\nSIMULACIÓN 5: Q-CAST (con fidelidad)")
-
-sim_qcast_fid = Simulator(0, LIMIT_VAL)
-net_qcast_fid = QuantumNetwork(None)
-net_qcast_fid.build_topology_from_json(config_path)
-net_qcast_fid.requests.clear()
-
-net_qcast_fid.simulator = sim_qcast_fid
-net_qcast_fid.all_nodes = list(net_qcast_fid.nodes)
-
-qcast_fid_timing = TimingModeSyncQCast(t1=0.1, t2=0.1, t3=0.1, t4=0.1)
-net_qcast_fid.timing = qcast_fid_timing
-qcast_fid_timing.install(net_qcast_fid)
-
-for i, node in enumerate(net_qcast_fid.all_nodes):
-    is_controller_node = (node.name == args.controller_node) if args.controller_node else (i == 0)
-    if is_controller_node:
-        app = QCastFidelityController(k_max=2)
-        fw_app = install_qcast_stack(node, controller=app)
-        setattr(net_qcast_fid, 'controller', app)
-    else:
-        fw_app = install_qcast_stack(node)
-
-    node.install(sim_qcast_fid)
-
-solicitudes_qcast_fid = []
-for idx, req in enumerate(solicitudes_qcast):
-    src = net_qcast_fid.get_node(req["src"].name)
-    dst = net_qcast_fid.get_node(req["dst"].name)
-    net_qcast_fid.add_request(src, dst, attr={"req_id": req["req_id"]})
-    solicitudes_qcast_fid.append({"req_id": req["req_id"], "src": src, "dst": dst})
-
-sim_qcast_fid.run()
-qcast_fid_resultados = construir_resultados_qcast(getattr(net_qcast_fid, 'controller', None), solicitudes_qcast_fid, ENTANGLEMENT_ATTEMPTS_PER_ROUTE)
-
-imprimir_info_rutas_detallada("Q-CAST (con fidelidad)", getattr(net_qcast_fid, 'controller', None), qcast_fid_resultados, LIMIT_VAL, ENTANGLEMENT_ATTEMPTS_PER_ROUTE)
-
-
-# =====================================================================
 # COMPARATIVA GLOBAL DE THROUGHPUT, PROBABILIDAD Y FIDELIDAD
 # =====================================================================
 
@@ -409,9 +374,6 @@ classic_throughput = classic_total / LIMIT_VAL
 dist_total = sum(r["successes"] for r in dist_resultados)
 dist_throughput = dist_total / LIMIT_VAL
 
-qcast_fid_total = sum(r["successes"] for r in qcast_fid_resultados)
-qcast_fid_throughput = qcast_fid_total / LIMIT_VAL
-
 # Calcular probabilidades de éxito globales
 num_requests = len(qcast_resultados)
 total_attempts = num_requests * ENTANGLEMENT_ATTEMPTS_PER_ROUTE
@@ -420,7 +382,6 @@ qcast_success_prob = qcast_total / total_attempts
 dijkstra_success_prob = dijkstra_total / total_attempts
 classic_success_prob = classic_total / total_attempts
 dist_success_prob = dist_total / total_attempts
-qcast_fid_success_prob = qcast_fid_total / total_attempts
 
 # Calcular fidelidades medias
 def calcular_fidelidad_media(resultados):
@@ -436,7 +397,6 @@ qcast_avg_fidelity = calcular_fidelidad_media(qcast_resultados)
 dijkstra_avg_fidelity = calcular_fidelidad_media(dijkstra_resultados)
 classic_avg_fidelity = calcular_fidelidad_media(classic_resultados)
 dist_avg_fidelity = calcular_fidelidad_media(dist_resultados)
-qcast_fid_avg_fidelity = calcular_fidelidad_media(qcast_fid_resultados)
 
 print("\nMÉTRICAS GLOBALES (TODOS LOS ALGORITMOS)")
 print(f"Q-CAST:")
@@ -459,45 +419,36 @@ print(f"  - Throughput:         {dist_throughput:.4f} EPS ({dist_total} Éxitos)
 print(f"  - Prob. Éxito:        {dist_success_prob:.4f} ({dist_total}/{total_attempts})")
 print(f"  - Fidelidad media:    {dist_avg_fidelity:.4f}")
 
-print(f"\nQ-CAST (con fidelidad):")
-print(f"  - Throughput:         {qcast_fid_throughput:.4f} EPS ({qcast_fid_total} Éxitos)")
-print(f"  - Prob. Éxito:        {qcast_fid_success_prob:.4f} ({qcast_fid_total}/{total_attempts})")
-print(f"  - Fidelidad media:    {qcast_fid_avg_fidelity:.4f}")
-
 algoritmos = [
     "Dijkstra\n#salts",
     "Dijkstra\ncapacitat",
     "Dijkstra\ndistáncia",
     "Q-CAST",
-    "Q-CAST\n(Fidelidad)",
 ]
 throughputs = [
     classic_throughput,
     dijkstra_throughput,
     dist_throughput,
     qcast_throughput,
-    qcast_fid_throughput,
 ]
 success_probs = [
     classic_success_prob,
     dijkstra_success_prob,
     dist_success_prob,
     qcast_success_prob,
-    qcast_fid_success_prob,
 ]
 avg_fidelities = [
     classic_avg_fidelity,
     dijkstra_avg_fidelity,
     dist_avg_fidelity,
     qcast_avg_fidelity,
-    qcast_fid_avg_fidelity,
 ]
 
-output_dir = os.path.join(os.path.dirname(__file__), "..", "outputs")
-os.makedirs(output_dir, exist_ok=True)
+# CREAR CARPETA CON TIMESTAMP
+sim_folder = create_simulation_folder()
 
 # Gráfico 1: Throughput Global
-plt.figure(figsize=(10, 5))
+fig = plt.figure(figsize=(10, 5))
 bars = plt.bar(algoritmos, throughputs, color="forestgreen")
 plt.ylabel("Throughput [EPS]")
 plt.title("Comparativa de Throughput Global")
@@ -511,15 +462,11 @@ for bar, value in zip(bars, throughputs):
         ha="center",
         va="bottom",
     )
-
-throughput_path = os.path.join(output_dir, "throughput.png")
 plt.tight_layout()
-plt.savefig(throughput_path, dpi=300)
-plt.close()
-print(f"\nGráfico de Throughput guardado en: {throughput_path}")
+save_graph(fig, sim_folder, "01_throughput_global")
 
 # Gráfico 2: Probabilidad de Éxito Global
-plt.figure(figsize=(10, 5))
+fig = plt.figure(figsize=(10, 5))
 bars = plt.bar(algoritmos, success_probs, color="forestgreen")
 plt.ylabel("Probabilidad de Éxito")
 plt.title("Comparativa de Probabilidad de Éxito")
@@ -534,15 +481,11 @@ for bar, value in zip(bars, success_probs):
         ha="center",
         va="bottom",
     )
-
-success_prob_path = os.path.join(output_dir, "success_probability_global_algoritmos.png")
 plt.tight_layout()
-plt.savefig(success_prob_path, dpi=300)
-plt.close()
-print(f" Gráfico de Probabilidad de Éxito guardado en: {success_prob_path}")
+save_graph(fig, sim_folder, "02_success_probability_global")
 
 # Gráfico 3: Fidelidad Media
-plt.figure(figsize=(10, 5))
+fig = plt.figure(figsize=(10, 5))
 bars = plt.bar(algoritmos, avg_fidelities, color="forestgreen")
 plt.ylabel("Fidelidad media")
 plt.title("Comparativa de Fidelidad Media")
@@ -557,11 +500,12 @@ for bar, value in zip(bars, avg_fidelities):
         ha="center",
         va="bottom",
     )
-
-avg_fidelity_path = os.path.join(output_dir, "average_fidelity_global_algoritmos.png")
 plt.tight_layout()
-plt.savefig(avg_fidelity_path, dpi=300)
-plt.close()
-print(f"Gráfico de Fidelidad Media guardado en: {avg_fidelity_path}")
+save_graph(fig, sim_folder, "03_average_fidelity_global")
 
-dibujar_escenario(net_qcast)
+# GUARDAR TOPOLOGÍA Y METADATA
+print("\nGuardando topología e información de enlaces...")
+save_topology_diagram(net_qcast, sim_folder, "00_topology_diagram")
+save_link_metadata(net_qcast, sim_folder, "04_link_metadata")
+
+print_simulation_summary(sim_folder)

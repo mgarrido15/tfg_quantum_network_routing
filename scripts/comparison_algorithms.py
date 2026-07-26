@@ -4,7 +4,6 @@ import json
 import time
 
 import matplotlib.pyplot as plt
-import numpy as np
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -23,23 +22,41 @@ from mqns.network.route import (
     assign_dijkstra_routes_with_capacity,
     assign_dijkstra_routes_with_capacity_reserve_all,
 )
-from mqns.network.qcast.controller import QCastController, QCastFidelityController
-from mqns.network.qcast.forwarder import QCastForwarder
+from mqns.network.qcast.controller import QCastController, QCastMultiEntController
+from mqns.network.qcast.forwarder import QCastForwarder, QCastMultiEntForwarder
 from mqns.network.protocol.link_layer import LinkLayer, LinkLayerCounters
 from mqns.utils import log
 from mqns.entity.memory.memory import QuantumMemory
+from simulation_utils import (
+    create_simulation_folder,
+    save_graph,
+    save_topology_diagram,
+    save_link_metadata,
+    print_simulation_summary,
+)
 
 
 
 LIMIT_VAL = 1000.0  
-SCENARIO_PATH = os.path.join(os.path.dirname(__file__), "..", "escenario_grande.json")
+SCENARIO_PATH = os.path.join(os.path.dirname(__file__), "..", "escenario_basico.json")
 REQUEST_REPEAT = 1
 MEMORY_T_COHERE = 10.0
 
 T_PHASE = 1.0
 TOTAL_CYCLE_TIME = T_PHASE * 4 
 
-log.set_default_level("DEBUG")
+QCAST_STRICT_CONFIG = {
+    "replan_each_cycle": True,
+    "balance_attempts_across_requests": True,
+    "max_main_path_width": 3,
+    "cap_success_per_cycle": False,
+    "max_recovery_paths": None,
+    "recovery_priority": "metric_only",
+    "retain_pending_queries_across_cycles": False,
+    "q_swap": 1.0,
+}
+
+log.set_default_level("WARN")
 
 
 def validar_configuracion_red(net):
@@ -47,16 +64,12 @@ def validar_configuracion_red(net):
     Comprueba si la memoria definida en los nodos es suficiente
     para el número de canales físicos conectados (grado del nodo).
     """
-    print("\n--- Validación de Configuración ---")
     for node in net.nodes:
-        # Contamos cuántos canales tiene conectados este nodo
         canales_conectados = [ch for ch in net.qchannels if node in ch.node_list]
         num_canales = len(canales_conectados)
         
-        # Leemos la capacidad real definida en el nodo
         capacidad_real = getattr(node, 'memory').capacity if hasattr(node, 'memory') else 0
         
-        # Validamos: el nodo necesita al menos 1 qubit por canal conectado
         if capacidad_real < num_canales:
             print(f" ADVERTENCIA: El nodo {node.name} tiene {num_canales} canales "
                   f"pero solo {capacidad_real} de memoria definida. ¡Puede fallar!")
@@ -71,9 +84,7 @@ class StaticQCastForwarder(QCastForwarder):
         return
 
 
-def install_stack(node, controller=None, qcast_queries=True):
-    # Usamos la memoria ya creada por la topología JSON.
-    # Si el nodo no tuviera memoria, la creamos como fallback.
+def install_stack(node, controller=None, qcast_queries=True, forwarder_class=None):
     if not hasattr(node, 'memory'):
         mem = QuantumMemory(name=f"mem_{node.name}", capacity=100, t_cohere=MEMORY_T_COHERE)
         node.memory = mem
@@ -84,7 +95,9 @@ def install_stack(node, controller=None, qcast_queries=True):
             mem._t_cohere = MEMORY_T_COHERE
 
     link_layer = LinkLayer()
-    if qcast_queries:
+    if forwarder_class is not None:
+        forwarder = forwarder_class(k_max=2, ps=1.0, purif_enabled=False, swapping_enabled=True)
+    elif qcast_queries:
         forwarder = QCastForwarder(k_max=2, ps=1.0, purif_enabled=False, swapping_enabled=True)
     else:
         forwarder = StaticQCastForwarder(k_max=2, ps=1.0, purif_enabled=False, swapping_enabled=True)
@@ -101,7 +114,6 @@ def _build_requests(net, topo_config):
     solicitudes = []
     base_reqs = topo_config.get("solicitudes", [])
     idx = 0
-    # SOLUCIÓN TRÁFICO: Multiplicamos las peticiones para crear una cola continua.
     for ronda in range(REQUEST_REPEAT):
         for req in base_reqs:
             src = net.get_node(req["src"])
@@ -140,8 +152,15 @@ def _install_static_route_on_forwarders(net, ctrl, route, req_id):
             qnode.forwarder.handle_classic_packet(qnode, install_msg)
 
 
-def ejecutar_simulacion(nombre, controller_class, route_alg=None, use_capacity=True, reserve_all_capacity=False):
-    print(f"\n--- Ejecutando: {nombre} ---")
+def ejecutar_simulacion(
+    nombre,
+    controller_class,
+    route_alg=None,
+    use_capacity=True,
+    reserve_all_capacity=False,
+    forwarder_class=None,
+    controller_kwargs=None,
+):
 
     # 1. Carga de red y topología
     with open(SCENARIO_PATH, "r", encoding="utf-8") as f:
@@ -153,10 +172,8 @@ def ejecutar_simulacion(nombre, controller_class, route_alg=None, use_capacity=T
     net.all_nodes = list(net.nodes)
     net.requests.clear()
 
-    # 2. INSPECCIÓN (Para tu TFG)
-    print("--- Verificación de Hardware ---")
+    # 2. INSPECCIÓN 
     for node in net.nodes:
-        # Contamos canales reales según la topología cargada
         num_canales = len([ch for ch in net.qchannels if node in ch.node_list])
         cap_actual = node.memory.capacity if hasattr(node, 'memory') else 0
         print(f"Nodo {node.name} tiene {num_canales} canales y {cap_actual} memoria.")
@@ -166,7 +183,8 @@ def ejecutar_simulacion(nombre, controller_class, route_alg=None, use_capacity=T
         net.route = route_alg
         net.build_route()
 
-    ctrl = controller_class(k_max=5)
+    controller_kwargs = controller_kwargs or {}
+    ctrl = controller_class(k_max=5, **controller_kwargs)
     _attach_controller(net, ctrl)
     net.simulator = sim
 
@@ -176,11 +194,8 @@ def ejecutar_simulacion(nombre, controller_class, route_alg=None, use_capacity=T
     topo_config["t_cohere"] = 10
     qcast_queries = route_alg is None
     for node in net.nodes:
-        install_stack(node, controller=ctrl, qcast_queries=qcast_queries)
+        install_stack(node, controller=ctrl, qcast_queries=qcast_queries, forwarder_class=forwarder_class)
         node.install(sim)
-
-    # 5. No reasignamos manualmente los qubits del canal.
-    # La topología ya asigna un qubit por canal a cada extremo en build_topology_from_json().
 
     # 6. Ejecución y métricas
     net.timing = TimingModeSyncQCast(t1= 1, t2= 1, t3= 1, t4= 1)
@@ -203,7 +218,6 @@ def ejecutar_simulacion(nombre, controller_class, route_alg=None, use_capacity=T
             )
         tiempo_calculo_rutas = time.perf_counter() - inicio_calculo_rutas
 
-        # Instalamos las rutas estáticas calculadas para que los forwards las ejecuten.
         for req in solicitudes:
             req_id = req["req_id"]
             info = ctrl.request_route_info.get(req_id)
@@ -215,7 +229,6 @@ def ejecutar_simulacion(nombre, controller_class, route_alg=None, use_capacity=T
 
             _install_static_route_on_forwarders(net, ctrl, route, req_id)
 
-    # Calculamos cuántas oportunidades reales (ciclos) tendrá cada petición
     ciclos_totales = int(LIMIT_VAL / TOTAL_CYCLE_TIME)
 
     sim.run()
@@ -228,28 +241,22 @@ def ejecutar_simulacion(nombre, controller_class, route_alg=None, use_capacity=T
 
 
 def calcular_fidelidad_media_real(resultados):
-    """
-    Fidelidad media observada en la simulación.
-
-    Preferimos la fidelidad medida sobre los éxitos E2E reales porque la
-    fidelidad teórica por ruta no refleja la pérdida acumulada por esperas,
-    swaps y liberaciones efectivas durante la ejecución.
-    """
     if not resultados:
         return 0.0
+
     fidelidades = []
     for r in resultados:
-        # La fidelidad observada la calculamos a partir de las muestras reales
-        # recogidas por el controlador. Si no existen, caemos a la fidelidad de
-        # ruta estimada para no perder la fila.
+        route = r.get("route")
+        if not route:
+            continue
         observed_fidelity = r.get("observed_fidelity", None)
         if observed_fidelity is not None and observed_fidelity > 0:
             fidelidades.append(float(observed_fidelity))
             continue
+        route_fidelity = float(r.get("route_fidelity", 0.0) or 0.0)
+        if route_fidelity > 0:
+            fidelidades.append(route_fidelity)
 
-        route_fidelity = r.get("route_fidelity", 0.0)
-        fidelidades.append(float(route_fidelity))
-        
     return sum(fidelidades) / len(fidelidades) if fidelidades else 0.0
 
 
@@ -259,12 +266,16 @@ def serializar_instrumentacion(ctrl):
 
     local_by_cycle = getattr(ctrl, "local_entanglement_by_cycle", {})
     eligible_by_cycle = getattr(ctrl, "eligible_by_cycle", {})
+    query_order_by_cycle = getattr(ctrl, "query_order_by_cycle", {})
+    success_history = getattr(ctrl, "success_history", [])
 
     return {
         "eligible_total": getattr(ctrl, "eligible_total", 0),
         "eligible_by_cycle": eligible_by_cycle,
         "local_entanglement_total": getattr(ctrl, "local_entanglement_total", 0),
         "local_entanglement_by_cycle": local_by_cycle,
+        "query_order_by_cycle": query_order_by_cycle,
+        "success_history": success_history,
         "p4_phase_count": getattr(ctrl, "p4_phase_count", 0),
         "p4_recovery_applied": getattr(ctrl, "p4_recovery_applied", 0),
         "qchannel_activations_by_path": getattr(ctrl, "qchannel_activations_by_path", {}),
@@ -272,40 +283,79 @@ def serializar_instrumentacion(ctrl):
     }
 
 
-# =====================================================================
+def export_analysis_json(output_dir: str, resultados_finales: dict, rutas_exportar: dict, instrumentacion_por_algoritmo: dict) -> str:
+    """Exporta un JSON de análisis con formato limpio para postprocesamiento."""
+    payload = {
+        "algorithms": []
+    }
+
+    for nombre, metrics in resultados_finales.items():
+        payload["algorithms"].append({
+            "name": nombre,
+            "metrics": metrics,
+            "routes": rutas_exportar.get(nombre, []),
+            "successful_req_ids_by_pair": [
+                {
+                    "base_req": item.get("base_req"),
+                    "successful_req_ids": item.get("successful_req_ids", []),
+                    "exitos_conseguidos": item.get("exitos_conseguidos", 0),
+                }
+                for item in rutas_exportar.get(nombre, [])
+            ],
+            "instrumentation": instrumentacion_por_algoritmo.get(nombre, {}),
+            "route_calc_time_seconds": rutas_exportar.get(f"{nombre}_tiempo_calculo_rutas_segundos"),
+        })
+
+    filename = os.path.join(output_dir, "analysis_results.json")
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=4, ensure_ascii=False)
+
+    return filename
+
+
+
 # EJECUCIÓN PRINCIPAL
-# =====================================================================
 
 sims = [
-    ("Dijkstra Clásico", QCastController, DijkstraRouteAlgorithm(), True, False),
-    ("Dijkstra Distancia", QCastController, DijkstraDistanceRouteAlgorithm(), True, False),
-    ("Dijkstra Capacidad Reserva", QCastController, DijkstraRouteAlgorithm(), True, True),
-    ("Dijkstra Distancia Reserva", QCastController, DijkstraDistanceRouteAlgorithm(), True, True),
-    ("Q-CAST", QCastController, None, False, False),
+    ("Dijkstra Clásico", QCastController, DijkstraRouteAlgorithm(), True, False, None, dict(QCAST_STRICT_CONFIG)),
+    ("Dijkstra Distancia", QCastController, DijkstraDistanceRouteAlgorithm(), True, False, None, dict(QCAST_STRICT_CONFIG)),
+    ("Dijkstra Capacidad Reserva", QCastController, DijkstraRouteAlgorithm(), True, True, None, dict(QCAST_STRICT_CONFIG)),
+    ("Dijkstra Distancia Reserva", QCastController, DijkstraDistanceRouteAlgorithm(), True, True, None, dict(QCAST_STRICT_CONFIG)),
+    ("Q-CAST", QCastController, None, False, False, None, dict(QCAST_STRICT_CONFIG)),
+    ("Q-CAST Varios Entrelazamientos", QCastMultiEntController, None, False, False, QCastMultiEntForwarder, dict(QCAST_STRICT_CONFIG)),
 ]
 
 resultados_finales = {}
 rutas_exportar = {}
 ultima_net = None
 instrumentacion_por_algoritmo = {}
+last_solicitudes = []
 
-for nombre, ctrl_class, route_alg, use_cap, reserve_all in sims:
-    resultados, counters, net, solicitudes, intentos_reales, tiempo_calculo_rutas = ejecutar_simulacion(nombre, ctrl_class, route_alg, use_cap, reserve_all)
+for nombre, ctrl_class, route_alg, use_cap, reserve_all, fw_class, ctrl_kwargs in sims:
+    resultados, counters, net, solicitudes, intentos_reales, tiempo_calculo_rutas = ejecutar_simulacion(
+        nombre,
+        ctrl_class,
+        route_alg,
+        use_cap,
+        reserve_all,
+        forwarder_class=fw_class,
+        controller_kwargs=ctrl_kwargs,
+    )
+    last_solicitudes = solicitudes
     ultima_net = net
     
     ctrl = getattr(net, "controller", None)
     instrumentacion = serializar_instrumentacion(ctrl)
     instrumentacion_por_algoritmo[nombre] = instrumentacion
     
-    # Agrupar resultados por par src-dst (base_req) para evitar filas repetidas
+    # Agrupar resultados por par src-dst (base_req) 
     grouped: dict[str, dict] = {}
     for r in resultados:
         req_id = r.get("req_id", "Desconocido")
-        # Intentamos extraer par base src-dst del req_id: formato esperado *_<src>_TO_<dst>
+        # Intentamos extraer par base src-dst del req_id
         parts = req_id.split("_")
         base_key = req_id
         if len(parts) >= 3 and "TO" in parts:
-            # reconstruir desde la primera aparición de <src>_TO_<dst>
             try:
                 idx_to = parts.index("TO")
                 src_part = parts[idx_to - 1]
@@ -344,22 +394,23 @@ for nombre, ctrl_class, route_alg, use_cap, reserve_all in sims:
                 "capacidad_final": capacidad_final,
                 "rutas_recuperacion": recovery_paths_formateados,
                 "exitos_conseguidos": successes,
+                "successful_req_ids": [req_id] if successes > 0 else [],
                 "total_reqs": 1,
             }
         else:
             entry["examples"].append(req_id)
-            # si ruta vacía, mantenemos la no-vacía previa
             if not entry["ruta_asignada"] and camino:
                 entry["ruta_asignada"] = camino
             if metrica_eda != 0.0:
                 entry["metrica_eda_sum"] += metrica_eda
                 entry["metrica_count"] += 1
             entry["exitos_conseguidos"] += successes
+            if successes > 0:
+                entry["successful_req_ids"].append(req_id)
             entry["total_reqs"] += 1
         
         print(f"Petición {req_id}: Info completa del controlador: {info_ruta}")
 
-    # Formatear lista agrupada: promediar métricas cuando proceda
     lista_rutas_agrupada = []
     for k, v in grouped.items():
         avg_metric = v["metrica_eda_sum"] / v["metrica_count"] if v["metrica_count"] > 0 else 0.0
@@ -372,25 +423,23 @@ for nombre, ctrl_class, route_alg, use_cap, reserve_all in sims:
             "capacidad_final": v["capacidad_final"],
             "rutas_recuperacion": v["rutas_recuperacion"],
             "exitos_conseguidos": v["exitos_conseguidos"],
+            "successful_req_ids": v.get("successful_req_ids", []),
             "total_reqs": v["total_reqs"],
         })
 
     pares_sd_con_exito = sum(1 for v in lista_rutas_agrupada if v["exitos_conseguidos"] > 0)
+    pares_sd_con_ruta = sum(1 for v in lista_rutas_agrupada if v["ruta_asignada"])
 
     rutas_exportar[nombre] = lista_rutas_agrupada
     rutas_exportar[f"{nombre}_instrumentacion"] = instrumentacion
     rutas_exportar[f"{nombre}_tiempo_calculo_rutas_segundos"] = tiempo_calculo_rutas
     
-    # MÉTRICAS REALES DE RENDIMIENTO
     total_exitos = sum(r.get("successes", 0) for r in resultados)
     throughput = total_exitos / LIMIT_VAL
     
-    # Probabilidad de éxito a nivel de aplicación (basada en los intentos para métricas)
-    # Éxitos totales / (Número de peticiones * Ciclos posibles)
     intentos_posibles_totales = len(solicitudes) * intentos_reales
     app_level_success_prob = total_exitos /  500 
     
-    # Probabilidad de éxito de la capa física (n_etg/n_attempts)
     physical_layer_success_prob = counters.n_etg / 2500 
     
     resultados_finales[nombre] = {
@@ -401,6 +450,7 @@ for nombre, ctrl_class, route_alg, use_cap, reserve_all in sims:
         "n_attempts": counters.n_attempts,
         "n_success_attempts": total_exitos,
         "fidelity": calcular_fidelidad_media_real(resultados),
+        "sd_pairs_with_route": pares_sd_con_ruta,
         "sd_pairs_with_success": pares_sd_con_exito,
     }
     
@@ -415,6 +465,7 @@ for nombre, data in resultados_finales.items():
     print(f"  - Probabilidad de éxito de la capa física (n_etg/n_attempts): {data['physical_layer_success_prob']:.4f}")
     print(f"  - Peticiones finales completadas (App): {data['n_success_attempts']}")
     print(f"  - Fidelidad real media observada: {data['fidelity']:.4f}")
+    print(f"  - Parejas S-D con ruta: {data['sd_pairs_with_route']}")
     print(f"  - Parejas S-D con éxito: {data['sd_pairs_with_success']}")
 
 if ultima_net is not None:
@@ -440,21 +491,24 @@ if instrumentacion_por_algoritmo:
 algoritmos = [
     "Dijkstra\nsalts",
     "Dijkstra\ndistáncia",
-    "Dijkstra\ncapacitat\nreserva",
-    "Dijkstra\ndistancia\ncapacitat\nreserva",
+    "Dijkstra\ncapacidad\nreserva",
+    "Dijkstra\ndistancia\ncapacidad\nreserva",
     "Q-CAST",
+    "Q-CAST\nVarios\nEntrelazamientos.",
 ]
 
-throughputs = [resultados_finales[n]["throughput"] for n, _, _, _, _ in sims]
-physical_success_probs = [resultados_finales[n]["physical_layer_success_prob"] for n, _, _, _, _ in sims]
-avg_fidelities = [resultados_finales[n]["fidelity"] for n, _, _, _, _ in sims]
-sd_pairs_with_success = [resultados_finales[n]["sd_pairs_with_success"] for n, _, _, _, _ in sims]
+throughputs = [resultados_finales[n]["throughput"] for n, _, _, _, _, _, _ in sims]
+physical_success_probs = [resultados_finales[n]["physical_layer_success_prob"] for n, _, _, _, _, _, _ in sims]
+avg_fidelities = [resultados_finales[n]["fidelity"] for n, _, _, _, _, _, _ in sims]
+sd_pairs_with_route = [resultados_finales[n]["sd_pairs_with_route"] for n, _, _, _, _, _, _ in sims]
+sd_pairs_with_success = [resultados_finales[n]["sd_pairs_with_success"] for n, _, _, _, _, _, _ in sims]
 
-output_dir = os.path.join(os.path.dirname(__file__), "..", "outputs")
-os.makedirs(output_dir, exist_ok=True)
+sim_folder = create_simulation_folder()
+
+total_requests_in_network = len(last_solicitudes)
 
 # Gráfico 1: Throughput
-plt.figure(figsize=(10, 5))
+fig = plt.figure(figsize=(10, 5))
 bars = plt.bar(algoritmos, throughputs, color="forestgreen")
 plt.ylabel("Throughput [EPS]")
 plt.title("Comparativa de Throughput Global")
@@ -462,11 +516,10 @@ plt.grid(axis="y", linestyle="--", alpha=0.3)
 for bar, value in zip(bars, throughputs):
     plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"{value:.4f}", ha="center", va="bottom")
 plt.tight_layout()
-plt.savefig(os.path.join(output_dir, "throughput_topologia_grande.png"), dpi=300)
-plt.close()
+save_graph(fig, sim_folder, "01_throughput_global")
 
 # Gráfico 2: Probabilidad de Éxito Física
-plt.figure(figsize=(10, 5))
+fig = plt.figure(figsize=(10, 5))
 bars = plt.bar(algoritmos, physical_success_probs, color="forestgreen")
 plt.ylabel("Probabilidad de Éxito de la Capa Física")
 plt.title("Comparativa de Probabilidad de Éxito de Entrelazamiento (Capa Física)")
@@ -476,11 +529,10 @@ plt.grid(axis="y", linestyle="--", alpha=0.3)
 for bar, value in zip(bars, physical_success_probs):
     plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"{value:.4f}", ha="center", va="bottom")
 plt.tight_layout()
-plt.savefig(os.path.join(output_dir, "success_probability_global_algoritmos_topologia_grande.png"), dpi=300)
-plt.close()
+save_graph(fig, sim_folder, "02_success_probability_physical_layer")
 
 # Gráfico 3: Fidelidad Teórica
-plt.figure(figsize=(10, 5))
+fig = plt.figure(figsize=(10, 5))
 bars = plt.bar(algoritmos, avg_fidelities, color="forestgreen")
 plt.ylabel("Fidelidad media teórica")
 plt.title("Comparativa de Fidelidad (Basada en Topología)")
@@ -490,27 +542,65 @@ plt.grid(axis="y", linestyle="--", alpha=0.3)
 for bar, value in zip(bars, avg_fidelities):
     plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"{value:.4f}", ha="center", va="bottom")
 plt.tight_layout()
-plt.savefig(os.path.join(output_dir, "average_fidelity_global_algoritmos_topologia_grande.png"), dpi=300)
-plt.close()
+save_graph(fig, sim_folder, "03_average_fidelity")
 
-# Gráfico 4: Parejas S-D con éxito
-plt.figure(figsize=(10, 5))
-bars = plt.bar(algoritmos, sd_pairs_with_success, color="forestgreen")
-plt.ylabel("Parejas S-D con éxito")
-plt.title("Número de parejas S-D conéxito")
+# Gráfico 4: Parejas S-D con ruta y con éxito
+fig = plt.figure(figsize=(10, 5))
+x_positions = list(range(len(algoritmos)))
+bar_width = 0.38
+
+bars_route = plt.bar(
+    [x - bar_width / 2 for x in x_positions],
+    sd_pairs_with_route,
+    width=bar_width,
+    color="forestgreen",
+    label="Parejas con ruta",
+)
+bars_success = plt.bar(
+    [x + bar_width / 2 for x in x_positions],
+    sd_pairs_with_success,
+    width=bar_width,
+    color="steelblue",
+    label="Parejas con éxito",
+)
+
+if total_requests_in_network > 0:
+    plt.axhline(
+        y=total_requests_in_network,
+        color="darkred",
+        linestyle="--",
+        linewidth=1.5,
+        label=f"Peticiones en la red ({total_requests_in_network})",
+    )
+plt.ylabel("Parejas S-D")
+plt.title("Parejas S-D con ruta y con entrelazamiento exitoso")
+plt.xticks(x_positions, algoritmos)
 plt.grid(axis="y", linestyle="--", alpha=0.3)
-for bar, value in zip(bars, sd_pairs_with_success):
-    plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"{value}", ha="center", va="bottom")
-
+for bar, route_count in zip(bars_route, sd_pairs_with_route):
+    plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"{route_count}", ha="center", va="bottom")
+for bar, success_count in zip(bars_success, sd_pairs_with_success):
+    plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"{success_count}", ha="center", va="bottom")
+plt.legend(loc="upper right")
 plt.tight_layout()
-plt.savefig(os.path.join(output_dir, "sd_pairs_with_success_topologia_grande.png"), dpi=300)
-plt.close()
+save_graph(fig, sim_folder, "04_sd_pairs_with_success")
 
-rutas_json_path = os.path.join(output_dir, "rutas_asignadas.json")
+# GUARDAR METADATA Y CONFIGURACIÓN
+rutas_json_path = os.path.join(sim_folder, "rutas_asignadas.json")
 with open(rutas_json_path, "w", encoding="utf-8") as f:
     json.dump(rutas_exportar, f, indent=4, ensure_ascii=False)
+print(f"  Rutas guardadas: rutas_asignadas.json")
 
-print(f"\n¡Gráficas guardadas exitosamente en: '{output_dir}'!")
+analysis_json_path = os.path.join(sim_folder, "analysis_results.json")
+export_analysis_json(sim_folder, resultados_finales, rutas_exportar, instrumentacion_por_algoritmo)
+print(f"  Análisis guardado: analysis_results.json")
+
+# GUARDAR TOPOLOGÍA Y METADATA DE ENLACES
+if ultima_net:
+    print("\nGuardando topología e información de enlaces...")
+    save_topology_diagram(ultima_net, sim_folder, "00_topology_diagram")
+    save_link_metadata(ultima_net, sim_folder, "05_link_metadata")
+
+print_simulation_summary(sim_folder)
 print("Simulaciones completadas.")
 
 if ultima_net:

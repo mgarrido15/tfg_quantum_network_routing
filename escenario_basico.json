@@ -37,7 +37,10 @@
     ],
     "solicitudes": [
         {"src": "n2", "dst": "n3"},
-        {"src": "n4", "dst": "n3"}
+        {"src": "n4", "dst": "n3"},
+        {"src": "n1", "dst": "n5"},
+        {"src": "n6", "dst": "n4"},
+        {"src": "n8", "dst": "n5"}
         
     ]
 }

@@ -1,17 +1,26 @@
 import heapq
 import math
+from typing import Any
 from typing import override
 from mqns.network.route.route import RouteAlgorithm, RouteQueryResult
 
 class QCastExtendedDijkstra(RouteAlgorithm):
-    def __init__(self, q_swap: float = 1.0):
+    def __init__(self, q_swap: float = 1.0, default_node_width: int = 1):
         super().__init__("Q-CAST-EDA")
         self.adj = {} 
         self.q_swap = q_swap 
+        self.default_node_width = max(1, int(default_node_width))
 
-    @staticmethod
-    def _fallback_width() -> int:
-        return 2
+    def _resolve_node_width(self, node: Any, virtual_widths: dict[Any, int]) -> int:
+        if virtual_widths and node in virtual_widths:
+            return int(virtual_widths.get(node, 0))
+
+        mem = getattr(node, "memory", None)
+        cap = getattr(mem, "capacity", None)
+        if cap is not None:
+            return int(cap)
+
+        return self.default_node_width
 
     @override
     def build(self, nodes, channels):
@@ -51,7 +60,9 @@ class QCastExtendedDijkstra(RouteAlgorithm):
     def query(self, src, dst, *args, **kwargs):
         virtual_widths = kwargs.get('virtual_widths', {}) or {}
         has_virtual_widths = bool(virtual_widths)
-        if virtual_widths and (virtual_widths.get(src, 0) <= 0 or virtual_widths.get(dst, 0) <= 0):
+        src_width = self._resolve_node_width(src, virtual_widths)
+        dst_width = self._resolve_node_width(dst, virtual_widths)
+        if src_width <= 0 or dst_width <= 0:
             return []
 
         e_score = {node: -1.0 for node in self.adj}
@@ -65,7 +76,7 @@ class QCastExtendedDijkstra(RouteAlgorithm):
         entry_count = 0 
 
         e_score[src] = float('inf')
-        width[src] = virtual_widths.get(src, self._fallback_width())
+        width[src] = src_width
         path_P_array[src] = []
         
         heapq.heappush(pq, (-e_score[src], entry_count, src))
@@ -76,15 +87,15 @@ class QCastExtendedDijkstra(RouteAlgorithm):
             if visited[u]: continue
             visited[u] = True
 
-            if has_virtual_widths and virtual_widths.get(u, 0) <= 0:
+            if self._resolve_node_width(u, virtual_widths) <= 0:
                 continue
             if u == dst:
                 metric_final = -curr_e_neg
                 return self._reconstruct(prev, src, dst, metric_final)
 
             for v, p_link in self.adj[u].items():
-                cubits_v = virtual_widths.get(v, self._fallback_width()) if has_virtual_widths else self._fallback_width()
-                if visited[v] or (has_virtual_widths and virtual_widths.get(v, 0) <= 0): 
+                cubits_v = self._resolve_node_width(v, virtual_widths)
+                if visited[v] or cubits_v <= 0:
                     continue
 
                 # CÁLCULO ASIMÉTRICO DE CÚBITS (El secreto para que funcione bien)
@@ -133,106 +144,6 @@ class QCastExtendedDijkstra(RouteAlgorithm):
         while curr is not None:
             path.append(curr)
             curr = prev[curr]
-        path.reverse()
-        if len(path) < 2: return []
-        return [RouteQueryResult(metric=metric, next_hop=path[1], route=path)]
-    
-
-class QCastExtendedDijkstraFidelity(RouteAlgorithm):
-
-    """Q-CAST variant that includes route fidelity in the routing metric."""
-
-    def __init__(self):
-        super().__init__("Q-CAST-EDA-FIDELITY")
-        self.adj = {}
-        self.fid_adj = {}
-        self.node_fidelity = {}
-
-    @staticmethod
-    def _fallback_width() -> int:
-        return 2
-
-
-
-    @override
-
-    def build(self, nodes, channels):
-        self.adj = {node: {} for node in nodes}
-        self.fid_adj = {node: {} for node in nodes}
-        self.node_fidelity = {node: float(getattr(node, "node_fidelity", 1.0)) for node in nodes}
-
-        for ch in channels:
-            u, v = ch.node_list if hasattr(ch, 'node_list') else (ch.node1, ch.node2)
-            p = getattr(ch, 'success_prob', 1.0)
-            fid = getattr(ch, "_fidelity", None)
-            if fid is None:
-                transfer_error = getattr(ch, "transfer_error", None)
-                if transfer_error is not None and hasattr(transfer_error, "p_survival"):
-                    fid = (3 * transfer_error.p_survival + 1) / 4
-                else:
-                    fid = 0.99
-            self.adj[u][v] = p
-            self.adj[v][u] = p
-            self.fid_adj[u][v] = float(fid)
-            self.fid_adj[v][u] = float(fid)
-
-    def query(self, src, dst, *args, **kwargs):
-
-        """Query route considering probability and fidelity. Metric: width * prob * fidelity"""
-
-        virtual_widths = kwargs.get('virtual_widths', {}) or {}
-        has_virtual_widths = bool(virtual_widths)
-        if virtual_widths and (virtual_widths.get(src, 0) <= 0 or virtual_widths.get(dst, 0) <= 0):
-            return []
-
-        e_score = {node: -1.0 for node in self.adj}
-        prev = {node: None for node in self.adj}
-        visited = {node: False for node in self.adj}
-        path_prob = {node: 0.0 for node in self.adj}
-        path_fidelity = {node: 0.0 for node in self.adj}
-        width = {node: 0 for node in self.adj}
-        pq = []
-        entry_count = 0
-        e_score[src] = float('inf')
-        path_prob[src] = 1.0
-        path_fidelity[src] = self.node_fidelity.get(src, 1.0)
-        width[src] = virtual_widths.get(src, self._fallback_width())
-        heapq.heappush(pq, (-e_score[src], entry_count, src))
-        entry_count += 1
-
-        while pq:
-            curr_e_neg, _, u = heapq.heappop(pq)
-            if visited[u]: continue
-            visited[u] = True
-            if has_virtual_widths and virtual_widths.get(u, 0) <= 0: continue
-            if u == dst: return self._reconstruct(prev, src, dst, -curr_e_neg)
-
-            for v, p_link in self.adj[u].items():
-                if visited[v] or (has_virtual_widths and virtual_widths.get(v, 0) <= 0): continue
-                v_width = virtual_widths.get(v, self._fallback_width()) if has_virtual_widths else self._fallback_width()
-                w_prime = int(min(width[u], v_width))
-                p_prime = path_prob[u] * p_link
-                f_link = self.fid_adj[u][v]
-                f_node = self.node_fidelity.get(v, 1.0)
-                f_prime = path_fidelity[u] * f_link * f_node
-                e_prime = w_prime * p_prime * f_prime
-                if e_prime > e_score[v]:
-                    e_score[v] = e_prime
-                    path_prob[v] = p_prime
-                    path_fidelity[v] = f_prime
-                    width[v] = w_prime
-                    prev[v] = u
-                    heapq.heappush(pq, (-e_prime, entry_count, v))
-                    entry_count += 1
-        return []
-
-    def _reconstruct(self, prev, src, dst, metric):
-        path = []
-        curr = dst
-        while curr is not None:
-            path.append(curr)
-            curr = prev[curr]
-            
         path.reverse()
         if len(path) < 2: return []
         return [RouteQueryResult(metric=metric, next_hop=path[1], route=path)]
