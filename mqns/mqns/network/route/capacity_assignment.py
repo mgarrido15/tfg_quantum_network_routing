@@ -41,7 +41,63 @@ def assign_dijkstra_routes_with_capacity(
     controller._node_remaining_capacity = {
         n: getattr(getattr(n, "memory", None), "capacity", 0) for n in all_nodes
     }
-    
+
+    def _commit_selection(req, route_nodes, selected_width: int, prob: float, fidelity: float):
+        req_id = req["req_id"]
+        route_names = [n.name for n in route_nodes]
+        hops = len(route_names) - 1
+
+        route_key = tuple(route_names)
+        owner_req_id = getattr(controller, 'route_owner_req', {}).get(route_key)
+        if owner_req_id is not None:
+            owner_info = controller.request_route_info.get(owner_req_id, {
+                "route": route_names,
+                "hops": hops,
+                "route_success_prob": prob,
+                "route_fidelity": fidelity,
+                "width": selected_width,
+                "w_asignado": selected_width,
+            })
+            controller.request_route_info[req_id] = dict(owner_info)
+            if hasattr(controller, 'register_route_alias'):
+                controller.register_route_alias(owner_req_id, req_id)
+            controller.request_success.setdefault(req_id, False)
+            controller.request_success_count.setdefault(req_id, 0)
+            debug_file.write(f"  Route duplicated; alias req {req_id} -> owner {owner_req_id}\n")
+            debug_file.flush()
+            return
+
+        if hasattr(controller, 'route_owner_req'):
+            controller.route_owner_req[route_key] = req_id
+
+        controller.request_route_info[req_id] = {
+            "route": route_names,
+            "hops": hops,
+            "route_success_prob": prob,
+            "route_fidelity": fidelity,
+            "width": selected_width,
+            "w_asignado": selected_width,
+        }
+
+        if enforce_capacity:
+            if reserve_all_route_capacity:
+                for i, n in enumerate(route_nodes):
+                    consume = selected_width if (i == 0 or i == len(route_nodes) - 1) else (2 * selected_width)
+                    controller._node_remaining_capacity[n] = max(
+                        0,
+                        controller._node_remaining_capacity.get(n, 0) - consume,
+                    )
+            else:
+                for i, n in enumerate(route_nodes):
+                    consume = 1 if (i == 0 or i == len(route_nodes) - 1) else 2
+                    controller._node_remaining_capacity[n] = max(
+                        0,
+                        controller._node_remaining_capacity.get(n, 0) - consume,
+                    )
+
+        controller.request_success.setdefault(req_id, False)
+        controller.request_success_count.setdefault(req_id, 0)
+
     for req in solicitudes:
         req_id = req["req_id"]
         src_node = req["src"]
@@ -67,18 +123,26 @@ def assign_dijkstra_routes_with_capacity(
                         break
             else:
                 # Prefer any candidate that already fits capacity constraints
-                for cand in candidates:
-                    if not hasattr(cand, "route"):
-                        continue
-                    cand_route = cand.route
-                    if reserve_all_route_capacity:
+                if reserve_all_route_capacity:
+                    best_score = -1.0
+                    for cand in candidates:
+                        if not hasattr(cand, "route"):
+                            continue
+                        cand_route = cand.route
                         width = _route_available_width(controller, cand_route)
-                        if width > 0:
+                        if width <= 0:
+                            continue
+                        cand_prob, _cand_fid = route_quality_fn(net, cand_route)
+                        score = float(width) * float(cand_prob)
+                        if score > best_score:
+                            best_score = score
                             selected = cand
                             selected_width = width
-                            break
-                    else:
-                        if all(controller._node_remaining_capacity.get(n, 0) > 0 for n in cand_route):
+                else:
+                    for cand in candidates:
+                        if not hasattr(cand, "route"):
+                            continue
+                        if _route_available_width(controller, cand.route) >= 1:
                             selected = cand
                             break
 
@@ -141,6 +205,10 @@ def assign_dijkstra_routes_with_capacity(
 
                 alt_path = _bfs_find_path(src_node, dst_node, excluded)
                 if alt_path:
+                    if _route_available_width(controller, alt_path) < 1:
+                        alt_path = None
+
+                if alt_path:
                     # wrap in a RouteQueryResult-like object with .route and .metric
                     class _Simple:
                         def __init__(self, route):
@@ -167,55 +235,7 @@ def assign_dijkstra_routes_with_capacity(
             debug_file.flush()
             continue
 
-        route_key = tuple(route_names)
-        owner_req_id = getattr(controller, 'route_owner_req', {}).get(route_key)
-        if owner_req_id is not None:
-            owner_info = controller.request_route_info.get(owner_req_id, {
-                "route": route_names,
-                "hops": hops,
-                "route_success_prob": prob,
-                "route_fidelity": fidelity,
-                "width": selected_width,
-                "w_asignado": selected_width,
-            })
-            controller.request_route_info[req_id] = dict(owner_info)
-            if hasattr(controller, 'register_route_alias'):
-                controller.register_route_alias(owner_req_id, req_id)
-            controller.request_success.setdefault(req_id, False)
-            controller.request_success_count.setdefault(req_id, 0)
-            debug_file.write(f"  Route duplicated; alias req {req_id} -> owner {owner_req_id}\n")
-            debug_file.flush()
-            continue
-
-        if hasattr(controller, 'route_owner_req'):
-            controller.route_owner_req[route_key] = req_id
-
-        controller.request_route_info[req_id] = {
-            "route": route_names,
-            "hops": hops,
-            "route_success_prob": prob,
-            "route_fidelity": fidelity,
-            "width": selected_width,
-            "w_asignado": selected_width,
-        }
-
-        if enforce_capacity:
-            if reserve_all_route_capacity:
-                for i, n in enumerate(route_nodes):
-                    consume = selected_width if (i == 0 or i == len(route_nodes) - 1) else (2 * selected_width)
-                    controller._node_remaining_capacity[n] = max(
-                        0,
-                        controller._node_remaining_capacity.get(n, 0) - consume,
-                    )
-            else:
-                for n in route_nodes:
-                    controller._node_remaining_capacity[n] = max(
-                        0,
-                        controller._node_remaining_capacity.get(n, 0) - 1,
-                    )
-
-        controller.request_success.setdefault(req_id, False)
-        controller.request_success_count.setdefault(req_id, 0)
+        _commit_selection(req, route_nodes, selected_width, prob, fidelity)
     
     debug_file.close()
 

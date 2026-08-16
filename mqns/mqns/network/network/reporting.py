@@ -7,6 +7,37 @@ def build_request_id(src_name: str, dst_name: str, req_index: int) -> str:
     return f"REQ_{req_index:03d}_{src_name}_TO_{dst_name}"
 
 
+def base_req_pair_key(req_id: str) -> str:
+    """Normaliza un req_id al par base src-dst para contar resultados por pareja."""
+    normalized = req_id.split("__REC_", 1)[0]
+    parts = normalized.split("_")
+    if "TO" in parts:
+        idx_to = parts.index("TO")
+        if idx_to > 0 and idx_to + 1 < len(parts):
+            return f"{parts[idx_to - 1]}_TO_{parts[idx_to + 1]}"
+    return normalized
+
+
+def compute_pair_success_average_by_cycle(success_history: list[dict[str, Any]], total_cycles: int) -> float:
+    """Promedio de parejas distintas que consiguen éxito en cada ciclo."""
+    if total_cycles <= 0 or not success_history:
+        return 0.0
+
+    successful_pairs_per_cycle: dict[int, set[str]] = defaultdict(set)
+    for event in success_history:
+        cycle = int(event.get("cycle", 0))
+        req_id = event.get("req_id")
+        if req_id is None:
+            continue
+        successful_pairs_per_cycle[cycle].add(base_req_pair_key(str(req_id)))
+
+    if not successful_pairs_per_cycle:
+        return 0.0
+
+    cycle_count = max(1, total_cycles)
+    return sum(len(pairs) for pairs in successful_pairs_per_cycle.values()) / float(cycle_count)
+
+
 def obtener_prob_y_fidelidad_de_ruta(net: Any, ruta: list) -> tuple[float, float]:
     """
     Calcula la probabilidad de éxito estimada y fidelidad para una ruta completa.
@@ -85,6 +116,24 @@ def construir_resultados_qcast(controller: Any, solicitudes: list, attempts_per_
     success_count = getattr(controller, "request_success_count", {})
     fidelities = getattr(controller, "request_fidelities", {})
 
+    # Consolidate successes/fidelities of recovery request IDs
+    # (e.g., REQ_xxx__REC_12) into their base request ID (REQ_xxx).
+    base_req_ids = {req["req_id"] for req in solicitudes}
+    success_count_agg = {req_id: int(success_count.get(req_id, 0)) for req_id in base_req_ids}
+    fidelities_agg = {req_id: list(fidelities.get(req_id, [])) for req_id in base_req_ids}
+
+    for req_id_alias, alias_successes in success_count.items():
+        if "__REC_" not in req_id_alias:
+            continue
+
+        req_id_base = req_id_alias.split("__REC_", 1)[0]
+        if req_id_base not in base_req_ids:
+            continue
+
+        success_count_agg[req_id_base] = success_count_agg.get(req_id_base, 0) + int(alias_successes)
+        if req_id_alias in fidelities:
+            fidelities_agg.setdefault(req_id_base, []).extend(fidelities.get(req_id_alias, []))
+
     for req in solicitudes:
         req_id = req["req_id"]
         src = req["src"].name
@@ -119,10 +168,10 @@ def construir_resultados_qcast(controller: Any, solicitudes: list, attempts_per_
                 "route_fidelity": info.get("route_fidelity", 0.0),
                 "route_width": info.get("w_asignado", 0),
                 "attempts": attempts_per_route,
-                "successes": success_count.get(req_id, 0),
+                "successes": success_count_agg.get(req_id, 0),
                 "observed_fidelity": (
-                    float(sum(fidelities.get(req_id, [])) / len(fidelities.get(req_id, [])))
-                    if len(fidelities.get(req_id, [])) > 0
+                    float(sum(fidelities_agg.get(req_id, [])) / len(fidelities_agg.get(req_id, [])))
+                    if len(fidelities_agg.get(req_id, [])) > 0
                     else 0.0
                 ),
             }

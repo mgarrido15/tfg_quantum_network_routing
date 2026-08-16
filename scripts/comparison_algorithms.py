@@ -19,6 +19,7 @@ from mqns.network.fw.routing import RoutingPathStatic
 from mqns.network.route import (
     DijkstraDistanceRouteAlgorithm,
     DijkstraRouteAlgorithm,
+    YenRouteAlgorithm,
     assign_dijkstra_routes_with_capacity,
     assign_dijkstra_routes_with_capacity_reserve_all,
 )
@@ -36,25 +37,17 @@ from simulation_utils import (
 )
 
 
-
 LIMIT_VAL = 1000.0  
 SCENARIO_PATH = os.path.join(os.path.dirname(__file__), "..", "escenario_basico.json")
-REQUEST_REPEAT = 1
+REQUEST_REPEAT = 20
 MEMORY_T_COHERE = 10.0
 
 T_PHASE = 1.0
 TOTAL_CYCLE_TIME = T_PHASE * 4 
-
-QCAST_STRICT_CONFIG = {
-    "replan_each_cycle": True,
-    "balance_attempts_across_requests": True,
-    "max_main_path_width": 3,
-    "cap_success_per_cycle": False,
-    "max_recovery_paths": None,
-    "recovery_priority": "metric_only",
-    "retain_pending_queries_across_cycles": False,
-    "q_swap": 1.0,
-}
+VERBOSE_RUN_DETAILS = False
+QCAST_MAX_ALLOC_WIDTH = 6
+QCAST_CONTROLLER_K_MAX = 8
+QCAST_FORWARDER_K_MAX = 4
 
 log.set_default_level("WARN")
 
@@ -64,6 +57,7 @@ def validar_configuracion_red(net):
     Comprueba si la memoria definida en los nodos es suficiente
     para el número de canales físicos conectados (grado del nodo).
     """
+    print("\n--- Validación de Configuración ---")
     for node in net.nodes:
         canales_conectados = [ch for ch in net.qchannels if node in ch.node_list]
         num_canales = len(canales_conectados)
@@ -85,20 +79,20 @@ class StaticQCastForwarder(QCastForwarder):
 
 
 def install_stack(node, controller=None, qcast_queries=True, forwarder_class=None):
+    # Usamos la memoria ya creada por la topología JSON.
+    # Si el nodo no tuviera memoria, la creamos como fallback.
     if not hasattr(node, 'memory'):
         mem = QuantumMemory(name=f"mem_{node.name}", capacity=100, t_cohere=MEMORY_T_COHERE)
         node.memory = mem
-        mem.node = node
-    else:
-        mem = node.memory
-        if hasattr(mem, "_t_cohere"):
-            mem._t_cohere = MEMORY_T_COHERE
+    mem = node.memory
+    if hasattr(mem, "_t_cohere"):
+        mem._t_cohere = MEMORY_T_COHERE
 
     link_layer = LinkLayer()
     if forwarder_class is not None:
-        forwarder = forwarder_class(k_max=2, ps=1.0, purif_enabled=False, swapping_enabled=True)
+        forwarder = forwarder_class(k_max=QCAST_FORWARDER_K_MAX, ps=1.0, purif_enabled=False, swapping_enabled=True)
     elif qcast_queries:
-        forwarder = QCastForwarder(k_max=2, ps=1.0, purif_enabled=False, swapping_enabled=True)
+        forwarder = QCastForwarder(k_max=QCAST_FORWARDER_K_MAX, ps=1.0, purif_enabled=False, swapping_enabled=True)
     else:
         forwarder = StaticQCastForwarder(k_max=2, ps=1.0, purif_enabled=False, swapping_enabled=True)
     
@@ -114,6 +108,7 @@ def _build_requests(net, topo_config):
     solicitudes = []
     base_reqs = topo_config.get("solicitudes", [])
     idx = 0
+    # SOLUCIÓN TRÁFICO: Multiplicamos las peticiones para crear una cola continua.
     for ronda in range(REQUEST_REPEAT):
         for req in base_reqs:
             src = net.get_node(req["src"])
@@ -152,15 +147,8 @@ def _install_static_route_on_forwarders(net, ctrl, route, req_id):
             qnode.forwarder.handle_classic_packet(qnode, install_msg)
 
 
-def ejecutar_simulacion(
-    nombre,
-    controller_class,
-    route_alg=None,
-    use_capacity=True,
-    reserve_all_capacity=False,
-    forwarder_class=None,
-    controller_kwargs=None,
-):
+def ejecutar_simulacion(nombre, controller_class, route_alg=None, use_capacity=True, reserve_all_capacity=False, forwarder_class=None):
+    print(f"\n--- Ejecutando: {nombre} ---")
 
     # 1. Carga de red y topología
     with open(SCENARIO_PATH, "r", encoding="utf-8") as f:
@@ -172,19 +160,24 @@ def ejecutar_simulacion(
     net.all_nodes = list(net.nodes)
     net.requests.clear()
 
-    # 2. INSPECCIÓN 
-    for node in net.nodes:
-        num_canales = len([ch for ch in net.qchannels if node in ch.node_list])
-        cap_actual = node.memory.capacity if hasattr(node, 'memory') else 0
-        print(f"Nodo {node.name} tiene {num_canales} canales y {cap_actual} memoria.")
+    # 2. INSPECCIÓN opcional (desactivada por defecto para acelerar simulaciones)
+    if VERBOSE_RUN_DETAILS:
+        print("--- Verificación de Hardware ---")
+        for node in net.nodes:
+            # Contamos canales reales según la topología cargada
+            num_canales = len([ch for ch in net.qchannels if node in ch.node_list])
+            cap_actual = node.memory.capacity if hasattr(node, 'memory') else 0
+            print(f"Nodo {node.name} tiene {num_canales} canales y {cap_actual} memoria.")
 
     # 3. Configuración inicial
     if route_alg is not None:
         net.route = route_alg
         net.build_route()
 
-    controller_kwargs = controller_kwargs or {}
-    ctrl = controller_class(k_max=5, **controller_kwargs)
+    if route_alg is None:
+        ctrl = controller_class(k_max=QCAST_CONTROLLER_K_MAX, max_alloc_width=QCAST_MAX_ALLOC_WIDTH)
+    else:
+        ctrl = controller_class(k_max=5)
     _attach_controller(net, ctrl)
     net.simulator = sim
 
@@ -196,6 +189,9 @@ def ejecutar_simulacion(
     for node in net.nodes:
         install_stack(node, controller=ctrl, qcast_queries=qcast_queries, forwarder_class=forwarder_class)
         node.install(sim)
+
+    # 5. No reasignamos manualmente los qubits del canal.
+    # La topología ya asigna un qubit por canal a cada extremo en build_topology_from_json().
 
     # 6. Ejecución y métricas
     net.timing = TimingModeSyncQCast(t1= 1, t2= 1, t3= 1, t4= 1)
@@ -218,6 +214,7 @@ def ejecutar_simulacion(
             )
         tiempo_calculo_rutas = time.perf_counter() - inicio_calculo_rutas
 
+        # Instalamos las rutas estáticas calculadas para que los forwards las ejecuten.
         for req in solicitudes:
             req_id = req["req_id"]
             info = ctrl.request_route_info.get(req_id)
@@ -229,6 +226,7 @@ def ejecutar_simulacion(
 
             _install_static_route_on_forwarders(net, ctrl, route, req_id)
 
+    # Calculamos cuántas oportunidades reales (ciclos) tendrá cada petición
     ciclos_totales = int(LIMIT_VAL / TOTAL_CYCLE_TIME)
 
     sim.run()
@@ -240,22 +238,31 @@ def ejecutar_simulacion(
     return resultados, counters, net, solicitudes, ciclos_totales, tiempo_calculo_rutas
 
 
-def calcular_fidelidad_media_real(resultados):
+def calcular_fidelidad_media_real(resultados, success_history=None):
+    """
+    Fidelidad media observada en la simulación.
+
+    Preferimos la fidelidad medida sobre los éxitos E2E reales porque la
+    fidelidad teórica por ruta no refleja la pérdida acumulada por esperas,
+    swaps y liberaciones efectivas durante la ejecución.
+    """
+    if success_history:
+        fidelidades_hist = [
+            float(event.get("fidelity"))
+            for event in success_history
+            if isinstance(event.get("fidelity"), (int, float)) and float(event.get("fidelity")) > 0
+        ]
+        if fidelidades_hist:
+            return sum(fidelidades_hist) / len(fidelidades_hist)
+
     if not resultados:
         return 0.0
 
     fidelidades = []
     for r in resultados:
-        route = r.get("route")
-        if not route:
-            continue
         observed_fidelity = r.get("observed_fidelity", None)
         if observed_fidelity is not None and observed_fidelity > 0:
             fidelidades.append(float(observed_fidelity))
-            continue
-        route_fidelity = float(r.get("route_fidelity", 0.0) or 0.0)
-        if route_fidelity > 0:
-            fidelidades.append(route_fidelity)
 
     return sum(fidelidades) / len(fidelidades) if fidelidades else 0.0
 
@@ -281,6 +288,10 @@ def serializar_instrumentacion(ctrl):
         "qchannel_activations_by_path": getattr(ctrl, "qchannel_activations_by_path", {}),
         "qchannel_activation_names_by_path": getattr(ctrl, "qchannel_activation_names_by_path", {}),
     }
+
+
+def _distance_metric(ch):
+    return float(ch.length)
 
 
 def export_analysis_json(output_dir: str, resultados_finales: dict, rutas_exportar: dict, instrumentacion_por_algoritmo: dict) -> str:
@@ -313,16 +324,17 @@ def export_analysis_json(output_dir: str, resultados_finales: dict, rutas_export
     return filename
 
 
-
+# =====================================================================
 # EJECUCIÓN PRINCIPAL
+# =====================================================================
 
 sims = [
-    ("Dijkstra Clásico", QCastController, DijkstraRouteAlgorithm(), True, False, None, dict(QCAST_STRICT_CONFIG)),
-    ("Dijkstra Distancia", QCastController, DijkstraDistanceRouteAlgorithm(), True, False, None, dict(QCAST_STRICT_CONFIG)),
-    ("Dijkstra Capacidad Reserva", QCastController, DijkstraRouteAlgorithm(), True, True, None, dict(QCAST_STRICT_CONFIG)),
-    ("Dijkstra Distancia Reserva", QCastController, DijkstraDistanceRouteAlgorithm(), True, True, None, dict(QCAST_STRICT_CONFIG)),
-    ("Q-CAST", QCastController, None, False, False, None, dict(QCAST_STRICT_CONFIG)),
-    ("Q-CAST Varios Entrelazamientos", QCastMultiEntController, None, False, False, QCastMultiEntForwarder, dict(QCAST_STRICT_CONFIG)),
+    ("Dijkstra Clásico", QCastController, DijkstraRouteAlgorithm(), True, False, None),
+    ("Dijkstra Distancia", QCastController, DijkstraDistanceRouteAlgorithm(), True, False, None),
+    ("Dijkstra Capacidad Reserva", QCastController, YenRouteAlgorithm(k_paths=8), True, True, None),
+    ("Dijkstra Distancia Reserva", QCastController, YenRouteAlgorithm(metric_func=_distance_metric, k_paths=8), True, True, None),
+    ("Q-CAST", QCastController, None, False, False, None),
+    ("Q-CAST Varios Entrelazamientos", QCastMultiEntController, None, False, False, QCastMultiEntForwarder),
 ]
 
 resultados_finales = {}
@@ -331,16 +343,8 @@ ultima_net = None
 instrumentacion_por_algoritmo = {}
 last_solicitudes = []
 
-for nombre, ctrl_class, route_alg, use_cap, reserve_all, fw_class, ctrl_kwargs in sims:
-    resultados, counters, net, solicitudes, intentos_reales, tiempo_calculo_rutas = ejecutar_simulacion(
-        nombre,
-        ctrl_class,
-        route_alg,
-        use_cap,
-        reserve_all,
-        forwarder_class=fw_class,
-        controller_kwargs=ctrl_kwargs,
-    )
+for nombre, ctrl_class, route_alg, use_cap, reserve_all, fw_class in sims:
+    resultados, counters, net, solicitudes, intentos_reales, tiempo_calculo_rutas = ejecutar_simulacion(nombre, ctrl_class, route_alg, use_cap, reserve_all, forwarder_class=fw_class)
     last_solicitudes = solicitudes
     ultima_net = net
     
@@ -348,14 +352,15 @@ for nombre, ctrl_class, route_alg, use_cap, reserve_all, fw_class, ctrl_kwargs i
     instrumentacion = serializar_instrumentacion(ctrl)
     instrumentacion_por_algoritmo[nombre] = instrumentacion
     
-    # Agrupar resultados por par src-dst (base_req) 
+    # Agrupar resultados por par src-dst (base_req) para evitar filas repetidas
     grouped: dict[str, dict] = {}
     for r in resultados:
         req_id = r.get("req_id", "Desconocido")
-        # Intentamos extraer par base src-dst del req_id
+        # Intentamos extraer par base src-dst del req_id: formato esperado *_<src>_TO_<dst>
         parts = req_id.split("_")
         base_key = req_id
         if len(parts) >= 3 and "TO" in parts:
+            # reconstruir desde la primera aparición de <src>_TO_<dst>
             try:
                 idx_to = parts.index("TO")
                 src_part = parts[idx_to - 1]
@@ -399,6 +404,7 @@ for nombre, ctrl_class, route_alg, use_cap, reserve_all, fw_class, ctrl_kwargs i
             }
         else:
             entry["examples"].append(req_id)
+            # si ruta vacía, mantenemos la no-vacía previa
             if not entry["ruta_asignada"] and camino:
                 entry["ruta_asignada"] = camino
             if metrica_eda != 0.0:
@@ -409,8 +415,10 @@ for nombre, ctrl_class, route_alg, use_cap, reserve_all, fw_class, ctrl_kwargs i
                 entry["successful_req_ids"].append(req_id)
             entry["total_reqs"] += 1
         
-        print(f"Petición {req_id}: Info completa del controlador: {info_ruta}")
+        if VERBOSE_RUN_DETAILS:
+            print(f"Petición {req_id}: Info completa del controlador: {info_ruta}")
 
+    # Formatear lista agrupada: promediar métricas cuando proceda
     lista_rutas_agrupada = []
     for k, v in grouped.items():
         avg_metric = v["metrica_eda_sum"] / v["metrica_count"] if v["metrica_count"] > 0 else 0.0
@@ -434,12 +442,16 @@ for nombre, ctrl_class, route_alg, use_cap, reserve_all, fw_class, ctrl_kwargs i
     rutas_exportar[f"{nombre}_instrumentacion"] = instrumentacion
     rutas_exportar[f"{nombre}_tiempo_calculo_rutas_segundos"] = tiempo_calculo_rutas
     
+    # MÉTRICAS REALES DE RENDIMIENTO
     total_exitos = sum(r.get("successes", 0) for r in resultados)
     throughput = total_exitos / LIMIT_VAL
     
+    # Probabilidad de éxito a nivel de aplicación (basada en los intentos para métricas)
+    # Éxitos totales / (Número de peticiones * Ciclos posibles)
     intentos_posibles_totales = len(solicitudes) * intentos_reales
     app_level_success_prob = total_exitos /  500 
     
+    # Probabilidad de éxito de la capa física (n_etg/n_attempts)
     physical_layer_success_prob = counters.n_etg / 2500 
     
     resultados_finales[nombre] = {
@@ -449,7 +461,7 @@ for nombre, ctrl_class, route_alg, use_cap, reserve_all, fw_class, ctrl_kwargs i
         "n_etg": counters.n_etg,             
         "n_attempts": counters.n_attempts,
         "n_success_attempts": total_exitos,
-        "fidelity": calcular_fidelidad_media_real(resultados),
+        "fidelity": calcular_fidelidad_media_real(resultados, instrumentacion.get("success_history", [])),
         "sd_pairs_with_route": pares_sd_con_ruta,
         "sd_pairs_with_success": pares_sd_con_exito,
     }
@@ -489,22 +501,22 @@ if instrumentacion_por_algoritmo:
 
 
 algoritmos = [
-    "Dijkstra\nsalts",
-    "Dijkstra\ndistáncia",
-    "Dijkstra\ncapacidad\nreserva",
-    "Dijkstra\ndistancia\ncapacidad\nreserva",
+    "Dijkstra\nsaltos",
+    "Dijkstra\ndistancia",
+    "Dijkstra\nsaltos\nmulticircuito",
+    "Dijkstra\ndistancia\nmulticircuito",
     "Q-CAST",
-    "Q-CAST\nVarios\nEntrelazamientos.",
+    "Q-CAST\nmultientrelazamiento",
 ]
 
-throughputs = [resultados_finales[n]["throughput"] for n, _, _, _, _, _, _ in sims]
-physical_success_probs = [resultados_finales[n]["physical_layer_success_prob"] for n, _, _, _, _, _, _ in sims]
-avg_fidelities = [resultados_finales[n]["fidelity"] for n, _, _, _, _, _, _ in sims]
-sd_pairs_with_route = [resultados_finales[n]["sd_pairs_with_route"] for n, _, _, _, _, _, _ in sims]
-sd_pairs_with_success = [resultados_finales[n]["sd_pairs_with_success"] for n, _, _, _, _, _, _ in sims]
+throughputs = [resultados_finales[n]["throughput"] for n, _, _, _, _, _ in sims]
+avg_fidelities = [resultados_finales[n]["fidelity"] for n, _, _, _, _, _ in sims]
+sd_pairs_with_route = [resultados_finales[n]["sd_pairs_with_route"] for n, _, _, _, _, _ in sims]
+sd_pairs_with_success = [resultados_finales[n]["sd_pairs_with_success"] for n, _, _, _, _, _ in sims]
 
 sim_folder = create_simulation_folder()
 
+# Referencia: peticiones realmente cargadas en la red durante la simulación.
 total_requests_in_network = len(last_solicitudes)
 
 # Gráfico 1: Throughput
@@ -517,19 +529,6 @@ for bar, value in zip(bars, throughputs):
     plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"{value:.4f}", ha="center", va="bottom")
 plt.tight_layout()
 save_graph(fig, sim_folder, "01_throughput_global")
-
-# Gráfico 2: Probabilidad de Éxito Física
-fig = plt.figure(figsize=(10, 5))
-bars = plt.bar(algoritmos, physical_success_probs, color="forestgreen")
-plt.ylabel("Probabilidad de Éxito de la Capa Física")
-plt.title("Comparativa de Probabilidad de Éxito de Entrelazamiento (Capa Física)")
-max_succ = max(physical_success_probs)
-plt.ylim(0, max_succ * 1.15 if max_succ > 0 else 1.0) 
-plt.grid(axis="y", linestyle="--", alpha=0.3)
-for bar, value in zip(bars, physical_success_probs):
-    plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"{value:.4f}", ha="center", va="bottom")
-plt.tight_layout()
-save_graph(fig, sim_folder, "02_success_probability_physical_layer")
 
 # Gráfico 3: Fidelidad Teórica
 fig = plt.figure(figsize=(10, 5))

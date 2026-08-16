@@ -20,20 +20,7 @@ from mqns.network.protocol.link_layer import LinkLayer, LinkLayerCounters
 # Configuración básica
 DEFAULT_ATTEMPTS = 500
 LIMIT_VAL = 100.0
-# Nivel seguro por defecto para no saturar consola/VS Code.
-# Para depurar, cambia temporalmente a "DEBUG".
 log.set_default_level("WARN")
-
-QCAST_STRICT_CONFIG = {
-    "replan_each_cycle": True,
-    "balance_attempts_across_requests": True,
-    "max_main_path_width": 3,
-    "cap_success_per_cycle": False,
-    "max_recovery_paths": None,
-    "recovery_priority": "metric_only",
-    "retain_pending_queries_across_cycles": False,
-    "q_swap": 1.0,
-}
 
 def install_qcast_stack(node, net, *, controller=None, purif_enabled=True):
     # En lugar de una LinkLayer vacía, necesitamos inicializarla con los canales del nodo
@@ -61,7 +48,7 @@ def run_qcast_sim():
     net.requests.clear()
     
     # 1. Instalar el controlador ANTES de instalar los nodos
-    ctrl = QCastController(k_max=2, **QCAST_STRICT_CONFIG)
+    ctrl = QCastController(k_max=2)
     setattr(net, 'controller', ctrl)
     setattr(ctrl, 'net', net)
     if net.nodes:

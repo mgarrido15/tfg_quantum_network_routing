@@ -1,26 +1,17 @@
 import heapq
 import math
-from typing import Any
 from typing import override
 from mqns.network.route.route import RouteAlgorithm, RouteQueryResult
 
 class QCastExtendedDijkstra(RouteAlgorithm):
-    def __init__(self, q_swap: float = 1.0, default_node_width: int = 1):
+    def __init__(self, q_swap: float = 1.0):
         super().__init__("Q-CAST-EDA")
         self.adj = {} 
         self.q_swap = q_swap 
-        self.default_node_width = max(1, int(default_node_width))
 
-    def _resolve_node_width(self, node: Any, virtual_widths: dict[Any, int]) -> int:
-        if virtual_widths and node in virtual_widths:
-            return int(virtual_widths.get(node, 0))
-
-        mem = getattr(node, "memory", None)
-        cap = getattr(mem, "capacity", None)
-        if cap is not None:
-            return int(cap)
-
-        return self.default_node_width
+    @staticmethod
+    def _fallback_width() -> int:
+        return 2
 
     @override
     def build(self, nodes, channels):
@@ -60,9 +51,7 @@ class QCastExtendedDijkstra(RouteAlgorithm):
     def query(self, src, dst, *args, **kwargs):
         virtual_widths = kwargs.get('virtual_widths', {}) or {}
         has_virtual_widths = bool(virtual_widths)
-        src_width = self._resolve_node_width(src, virtual_widths)
-        dst_width = self._resolve_node_width(dst, virtual_widths)
-        if src_width <= 0 or dst_width <= 0:
+        if virtual_widths and (virtual_widths.get(src, 0) <= 0 or virtual_widths.get(dst, 0) <= 0):
             return []
 
         e_score = {node: -1.0 for node in self.adj}
@@ -76,7 +65,7 @@ class QCastExtendedDijkstra(RouteAlgorithm):
         entry_count = 0 
 
         e_score[src] = float('inf')
-        width[src] = src_width
+        width[src] = virtual_widths.get(src, self._fallback_width())
         path_P_array[src] = []
         
         heapq.heappush(pq, (-e_score[src], entry_count, src))
@@ -87,15 +76,15 @@ class QCastExtendedDijkstra(RouteAlgorithm):
             if visited[u]: continue
             visited[u] = True
 
-            if self._resolve_node_width(u, virtual_widths) <= 0:
+            if has_virtual_widths and virtual_widths.get(u, 0) <= 0:
                 continue
             if u == dst:
                 metric_final = -curr_e_neg
                 return self._reconstruct(prev, src, dst, metric_final)
 
             for v, p_link in self.adj[u].items():
-                cubits_v = self._resolve_node_width(v, virtual_widths)
-                if visited[v] or cubits_v <= 0:
+                cubits_v = virtual_widths.get(v, self._fallback_width()) if has_virtual_widths else self._fallback_width()
+                if visited[v] or (has_virtual_widths and virtual_widths.get(v, 0) <= 0): 
                     continue
 
                 # CÁLCULO ASIMÉTRICO DE CÚBITS (El secreto para que funcione bien)

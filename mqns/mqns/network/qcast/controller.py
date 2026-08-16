@@ -10,41 +10,19 @@ from mqns.network.qcast.extended_dijkstra import QCastExtendedDijkstra
 from mqns.utils import log, rng
 
 class QCastController(RoutingController):
-    RECOVERY_PRIORITIES = {"metric_only", "hops_then_metric"}
-
     def __init__(
         self,
         k_max: int = 4,
         enable_recovery_paths: bool = True,
-        *,
-        replan_each_cycle: bool = True,
-        balance_attempts_across_requests: bool = False,
-        max_main_path_width: int | None = None,
-        cap_success_per_cycle: bool = False,
-        max_recovery_paths: int | None = None,
-        recovery_priority: str = "metric_only",
-        retain_pending_queries_across_cycles: bool = False,
-        q_swap: float = 1.0,
+        max_alloc_width: int | None = None,
     ):
         super().__init__()
-        if recovery_priority not in self.RECOVERY_PRIORITIES:
-            raise ValueError(
-                f"Invalid recovery_priority={recovery_priority!r}. "
-                f"Use one of {sorted(self.RECOVERY_PRIORITIES)}"
-            )
-
         self.k_max = k_max
         self.enable_recovery_paths = enable_recovery_paths
-        self.replan_each_cycle = replan_each_cycle
-        self.balance_attempts_across_requests = balance_attempts_across_requests
-        self.max_main_path_width = max_main_path_width
-        self.cap_success_per_cycle = cap_success_per_cycle
-        self.max_recovery_paths = max_recovery_paths
-        self.recovery_priority = recovery_priority
-        self.retain_pending_queries_across_cycles = retain_pending_queries_across_cycles
+        self.max_alloc_width = max_alloc_width
         self.paths = []
         self.pending_qcast_queries = []
-        self.eda = QCastExtendedDijkstra(q_swap=q_swap)
+        self.eda = QCastExtendedDijkstra()
         self.net = None
         
         # Estadísticas de ciclo y éxito
@@ -138,7 +116,7 @@ class QCastController(RoutingController):
             
         if msg.get("cmd") == "QCAST_QUERY":
             self.pending_qcast_queries.append(msg)
-            log.debug(f"QCastController: petición recibida req_id={msg['req_id']} src={msg['src']}")
+            log.debug(f"QCastController: recibida petición {msg['req_id']} de {msg['src']}")
 
     def handle(self, event):
         if isinstance(event, TimingPhaseEvent):
@@ -150,9 +128,6 @@ class QCastController(RoutingController):
         # Ejecutamos el enrutamiento en P2
         if phase_name == "P2":
             self._success_reported_this_cycle.clear()
-            if self.replan_each_cycle:
-                # Rebuild demand set every cycle so routing is recomputed on fresh traffic.
-                self.pending_qcast_queries = self._build_queries_from_network_requests()
             if self.pending_qcast_queries:
                 self.current_cycle += 1
                 rng.shuffle(self.pending_qcast_queries)
@@ -161,8 +136,6 @@ class QCastController(RoutingController):
                 self._process_all_qcast_requests()
                 self.qcast_route_calc_time_total += time.perf_counter() - inicio_calculo_rutas
                 self.qcast_route_calc_runs += 1
-                if not self.replan_each_cycle and not self.retain_pending_queries_across_cycles:
-                    self.pending_qcast_queries.clear()
         
         # Ejecutamos la recuperación de rutas en P4
         elif phase_name == "P4":
@@ -219,23 +192,6 @@ class QCastController(RoutingController):
             for node in nodes_list
         }
 
-    def _build_queries_from_network_requests(self) -> list[dict[str, str]]:
-        if not self.net:
-            return []
-
-        requests = []
-        for req in getattr(self.net, 'requests', []):
-            req_id = req.attr.get('req_id') if hasattr(req, 'attr') and isinstance(req.attr, dict) else None
-            if req_id is None:
-                continue
-            requests.append({
-                'cmd': 'QCAST_QUERY',
-                'req_id': req_id,
-                'src': req.src.name,
-                'dst': req.dst.name,
-            })
-        return requests
-
     def _process_all_qcast_requests(self):
         """
         FASE P2:
@@ -246,9 +202,6 @@ class QCastController(RoutingController):
             return
 
         nodes_list = list(getattr(self.net, 'all_nodes', list(getattr(self.net, 'nodes', []))))
-        if self.replan_each_cycle:
-            # Fresh residual-capacity pool every P2 cycle.
-            self.node_remaining_capacity = {}
         self._initialize_node_capacity_once(nodes_list)
         
         qchannels = getattr(self.net, 'qchannels', getattr(self.net, '_qchannels', []))
@@ -261,91 +214,58 @@ class QCastController(RoutingController):
         # ========================================================
         # LÓGICA CORE Q-CAST: UNA RUTA PRINCIPAL POR PETICIÓN
         # ========================================================
-        if self.balance_attempts_across_requests:
-            # Fair-first mode:
-            # 1) Assign width=1 to as many requests as possible.
-            # 2) Grow widths in round-robin, bounded by max_main_path_width if configured.
-            alloc_buffer: list[list[Any]] = []
+        while remaining_queries:
+            best_query = None
+            best_result = None
+            best_ext = -1.0
+            best_w = 0
 
+            # Copiamos la lista para poder eliminar elementos si es necesario
             for req in list(remaining_queries):
                 src_node = self.net.get_node(req["src"])
                 dst_node = self.net.get_node(req["dst"])
+                
+                # Buscamos ruta en el grafo residual actual
                 result = self.eda.query(src_node, dst_node, virtual_widths=dict(self.node_remaining_capacity))
-                if not result:
-                    continue
+                
+                if result and len(result) > 0:
+                    route_objs = result[0].route
+                    metric = result[0].metric
+                    
+                    # Calcular el cuello de botella (bottleneck) de esta ruta
+                    w_bottleneck = float('inf')
+                    for i, node in enumerate(route_objs):
+                        cap = self.node_remaining_capacity.get(node, 0)
+                        if i != 0 and i != len(route_objs) - 1:
+                            cap = cap // 2  
+                        w_bottleneck = min(w_bottleneck, cap)
+                    
+                    w_bottleneck = int(w_bottleneck)
+                    if self.max_alloc_width is not None and self.max_alloc_width > 0:
+                        w_bottleneck = min(w_bottleneck, int(self.max_alloc_width))
 
-                best = result[0]
-                if self._route_bottleneck_width(best.route) < 1:
-                    continue
-
-                if self._consume_route_capacity(best.route, w=1):
-                    alloc_buffer.append([req, best, 1])
-
-            growth = True
-            while growth:
-                growth = False
-                for item in alloc_buffer:
-                    current_w = item[2]
-                    if self.max_main_path_width is not None and current_w >= self.max_main_path_width:
-                        continue
-                    if self._consume_route_capacity(item[1].route, w=1):
-                        item[2] = current_w + 1
-                        growth = True
-
-            allocated_requests = [(item[0], item[1], int(item[2])) for item in alloc_buffer]
-        else:
-            while remaining_queries:
-                best_query = None
-                best_result = None
-                best_ext = -1.0
-                best_w = 0
-
-                # Copiamos la lista para poder eliminar elementos si es necesario
-                for req in list(remaining_queries):
-                    src_node = self.net.get_node(req["src"])
-                    dst_node = self.net.get_node(req["dst"])
-
-                    # Buscamos ruta en el grafo residual actual
-                    result = self.eda.query(src_node, dst_node, virtual_widths=dict(self.node_remaining_capacity))
-
-                    if result and len(result) > 0:
-                        route_objs = result[0].route
-                        metric = result[0].metric
-
-                        # Calcular el cuello de botella (bottleneck) de esta ruta
-                        w_bottleneck = float('inf')
-                        for i, node in enumerate(route_objs):
-                            cap = self.node_remaining_capacity.get(node, 0)
-                            if i != 0 and i != len(route_objs) - 1:
-                                cap = cap // 2
-                            w_bottleneck = min(w_bottleneck, cap)
-
-                        w_bottleneck = int(w_bottleneck)
-                        if self.max_main_path_width is not None:
-                            w_bottleneck = min(w_bottleneck, self.max_main_path_width)
-
-                        # Si hay capacidad física y la métrica es la mejor hasta ahora
-                        if w_bottleneck >= 1 and metric > best_ext:
-                            best_ext = metric
-                            best_result = result[0]
-                            best_query = req
-                            best_w = w_bottleneck
-                    else:
-                        # Si no hay ruta posible ni para w=1, eliminamos la petición de este ciclo
-                        remaining_queries.remove(req)
-
-                # Si encontramos un ganador en esta iteración del Greedy
-                if best_query and best_result and best_w >= 1:
-                    # Reservamos la capacidad para actualizar el grafo residual
-                    if self._consume_route_capacity(best_result.route, w=best_w):
-                        allocated_requests.append((best_query, best_result, best_w))
-                        # Una vez asignada la ruta principal, la petición deja de participar en el greedy.
-                        remaining_queries.remove(best_query)
-                    else:
-                        remaining_queries.remove(best_query)
+                    # Si hay capacidad física y la métrica es la mejor hasta ahora
+                    if w_bottleneck >= 1 and metric > best_ext:
+                        best_ext = metric
+                        best_result = result[0]
+                        best_query = req
+                        best_w = w_bottleneck
                 else:
-                    # Si no se encontró ninguna ruta válida para NINGUNA petición restante, la red está llena.
-                    break
+                    # Si no hay ruta posible ni para w=1, eliminamos la petición de este ciclo
+                    remaining_queries.remove(req)
+
+            # Si encontramos un ganador en esta iteración del Greedy
+            if best_query and best_result and best_w >= 1:
+                # Reservamos la capacidad para actualizar el grafo residual
+                if self._consume_route_capacity(best_result.route, w=best_w):
+                    allocated_requests.append((best_query, best_result, best_w))
+                    # Una vez asignada la ruta principal, la petición deja de participar en el greedy.
+                    remaining_queries.remove(best_query)
+                else:
+                    remaining_queries.remove(best_query)
+            else:
+                # Si no se encontró ninguna ruta válida para NINGUNA petición restante, la red está llena. Salimos del bucle.
+                break
 
         # ========================================================
         # INSTALACIÓN Y RECUPERACIÓN (P4)
@@ -379,8 +299,8 @@ class QCastController(RoutingController):
             self.request_route_info[req_id]['metric'] = result.metric
             self.request_route_info[req_id]['route_success_prob'] = route_prob
             self.request_route_info[req_id]['route_fidelity'] = route_fidelity
-            self.request_route_info[req_id]['w_asignado'] = w_real
-            self.request_route_info[req_id]['multi_routes'] = [{'route': route_names, 'w': w_real}]
+            self.request_route_info[req_id]['w_asignado'] += w_real
+            self.request_route_info[req_id]['multi_routes'].append({'route': route_names, 'w': w_real})
             self.request_success.setdefault(req_id, False)
 
             # Generación e instalación en FIB
@@ -472,10 +392,7 @@ class QCastController(RoutingController):
                                     'hops': len(excluded_names) - 1,
                                 })
 
-            if self.recovery_priority == "metric_only":
-                recovery_candidates.sort(key=lambda item: (-item['metric'], item['route']))
-            else:
-                recovery_candidates.sort(key=lambda item: (item['hops'], -item['metric'], item['route']))
+            recovery_candidates.sort(key=lambda item: (item['hops'], -item['metric'], item['route']))
             selected_recovery_candidates: list[dict[str, Any]] = []
             selected_routes: set[tuple[str, ...]] = set()
             selected_segments: set[tuple[str, str]] = set()
@@ -487,7 +404,7 @@ class QCastController(RoutingController):
                 selected_routes.add(route_key)
                 selected_segments.add(segment_key)
                 selected_recovery_candidates.append(candidate)
-                if self.max_recovery_paths is not None and len(selected_recovery_candidates) >= self.max_recovery_paths:
+                if len(selected_recovery_candidates) >= 2:
                     break
 
             for candidate in selected_recovery_candidates:
@@ -533,12 +450,11 @@ class QCastController(RoutingController):
                         'route_success_prob': 0.0, 'route_fidelity': 0.0, 'w_asignado': 0, 'multi_routes': []
                     }
                 self.request_success.setdefault(req_id, False)
-                if self.retain_pending_queries_across_cycles:
-                    todavia_pendientes.append(req)
-
-        # Si está habilitada la cola persistente, dejamos solo las no asignadas.
-        if (not self.replan_each_cycle) and self.retain_pending_queries_across_cycles:
-            self.pending_qcast_queries = todavia_pendientes
+                # ¡LA MAGIA! La guardamos en la sala de espera
+                todavia_pendientes.append(req)
+            
+        # Actualizamos la lista oficial solo con los que NO consiguieron mesa
+        self.pending_qcast_queries = todavia_pendientes
 
     def _consume_route_capacity(self, route_objs, w: int = 1) -> bool:
         if len(route_objs) < 2 or w <= 0: return False
@@ -610,16 +526,11 @@ class QCastController(RoutingController):
         return True
 
     def report_success(self, req_id, time, fidelity: float | None = None):
-        """Report E2E entanglement success.
-
-        When cap_success_per_cycle is True, only one success per req_id per cycle
-        is counted. By default, every success is counted.
-        """
+        """Report one E2E entanglement success.  Capped at 1 per req_id per cycle."""
         try:
-            if self.cap_success_per_cycle:
-                if req_id in self._success_reported_this_cycle:
-                    return
-                self._success_reported_this_cycle.add(req_id)
+            if req_id in self._success_reported_this_cycle:
+                return
+            self._success_reported_this_cycle.add(req_id)
             self.successful_requests += 1
             self.request_success[req_id] = True
             self.request_success_count[req_id] = self.request_success_count.get(req_id, 0) + 1
@@ -689,8 +600,6 @@ class QCastController(RoutingController):
                 fallback_patches.append(rec)
 
         def patch_rank(patch):
-            if self.recovery_priority == "metric_only":
-                return (-float(patch.get('metric', 0.0)), tuple(patch.get('route', [])))
             return (
                 int(patch.get('hops', max(0, len(patch.get('route', [])) - 1))),
                 -float(patch.get('metric', 0.0)),
@@ -735,11 +644,13 @@ class QCastController(RoutingController):
                         if q.state.name.startswith("ENTANGLED"):
                             forwarder.attempt_swapping(q)
 class QCastMultiEntController(QCastController):
-    """Q-CAST variant that always counts every E2E entanglement.
+    """Q-CAST variant that counts every E2E entanglement (no 1-success cap).
 
-    This class is kept for backward compatibility in experiments where
-    ``QCastController`` could be configured with ``cap_success_per_cycle=True``.
-    ``QCastMultiEntController`` ignores that cap and always counts all successes.
+    Both Q-CAST and this variant allow cross-channel swapping (any channel on
+    link A-B can pair with any channel on link B-C within the same request).
+    The only difference is in how successes are reported:
+    - QCastController caps at 1 success per req_id.
+    - QCastMultiEntController counts every successful E2E entanglement.
     """
 
     def report_success(self, req_id, time, fidelity: float | None = None):
