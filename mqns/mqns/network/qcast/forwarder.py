@@ -2,11 +2,11 @@ from typing import Any, cast
 from mqns.network.fw.forwarder import Forwarder
 from mqns.network.network.timing import TimingPhaseEvent
 from mqns.entity.cchannel import ClassicPacket
-from mqns.entity.memory import QubitState
+from mqns.entity.memory import PathDirection, QubitState
 from mqns.utils import log
 from mqns.network.protocol.event import ManageActiveChannels
-from mqns.network.protocol.event import QubitEntangledEvent
 from mqns.network.fw.fib import FibEntry
+from mqns.network.fw.classic import fw_control_cmd_handler
 
 class QCastForwarder(Forwarder):
     def __init__(self, k_max: int = 3, ps: float = 1.0, purif_enabled: bool = True, swapping_enabled: bool = True):
@@ -16,11 +16,20 @@ class QCastForwarder(Forwarder):
         self.swapping_enabled = swapping_enabled
         self.request_sent = False
         self._edge_path_channels: dict[tuple[str, str], dict[int, list[str]]] = {}
+        self._consumed_pending_eprs: set[str] = set()
 
     def _edge_key(self, a: str, b: str) -> tuple[str, str]:
         return (a, b) if a <= b else (b, a)
 
-    def _select_channels_for_edge(self, *, neighbor_name: str, path_id: int, width: int, uninstall: bool) -> list[Any]:
+    def _select_channels_for_edge(
+        self,
+        *,
+        neighbor_name: str,
+        path_id: int,
+        width: int,
+        uninstall: bool,
+        selected_names: list[str] | None = None,
+    ) -> list[Any]:
         """Prefer channels not used by other active paths on the same physical edge."""
         all_channels = self.node.network.get_qchannels_between(self.node.name, neighbor_name)
         if not all_channels or width <= 0:
@@ -35,6 +44,17 @@ class QCastForwarder(Forwarder):
                 selected_set = set(selected_names)
                 return [qc for qc in all_channels if qc.name in selected_set]
             return all_channels[:width]
+
+        if selected_names is not None:
+            selected_set = set(selected_names)
+            selected = [qc for qc in all_channels if qc.name in selected_set]
+            if len(selected) != width:
+                raise RuntimeError(
+                    f"{self.node}: controller selected {len(selected_names)} channels for "
+                    f"path {path_id} on {edge_key}, but {len(selected)} are available locally"
+                )
+            edge_alloc[path_id] = [qc.name for qc in selected]
+            return selected
 
         used_by_others: set[str] = set()
         for other_path_id, names in edge_alloc.items():
@@ -53,14 +73,10 @@ class QCastForwarder(Forwarder):
 
     def install(self, node):
         super().install(node)
-        self.add_handler(self.handle_qubit_entangled, QubitEntangledEvent)
         if hasattr(node, 'controller'):
             self.controller = node.controller
 
     def qubit_is_entangled(self, event):
-        if hasattr(event, 'qubit') and hasattr(event.qubit, 'state'):
-            if event.qubit.state.name != "ENTANGLED1":
-                return 
         super().qubit_is_entangled(event)
 
     def qubit_is_purif(self, qubit, fib_entry, partner):
@@ -73,48 +89,40 @@ class QCastForwarder(Forwarder):
         qubit.trace_event("qcast_qubit_is_purif", self.simulator.tc, note=f"partner={partner.name}")
         super().qubit_is_purif(qubit, fib_entry, partner)
 
-    def handle_qubit_entangled(self, event: QubitEntangledEvent):
-        qubit = event.qubit
-        path_id = getattr(qubit, 'path_id', None)
-        if path_id is None:
+    def can_consume(self, fib_entry, epr):
+        if fib_entry is None:
+            return super().can_consume(fib_entry, epr)
+        return fib_entry.own_idx == len(fib_entry.route) - 1
+
+    def qubit_is_eligible(self, qubit, fib_entry):
+        if fib_entry is not None and fib_entry.own_idx == 0:
             return
-
-        entry = self.fib.get(path_id) if hasattr(self.fib, 'get') else None
-        if not entry:
-            return
-
-        is_dest = False
-        is_src = False
-        if hasattr(entry, 'route') and isinstance(entry.route, list) and len(entry.route) > 0:
-            is_dest = (entry.route[-1] == self.node.name)
-            is_src = (entry.route[0] == self.node.name)
-        elif hasattr(entry, 'dest'):
-            destino = getattr(entry, 'dest', None)
-            origen = getattr(entry, 'src', None)
-            is_dest = (destino == self.node or getattr(destino, 'name', '') == self.node.name)
-            is_src = (origen == self.node or getattr(origen, 'name', '') == self.node.name)
-
-        # Caso A: Somos el destino (Consumimos el entrelazamiento final)
-        if is_dest:
-            qubit.trace_event("qcast_dest_entangled", self.simulator.tc, note=f"node={self.node.name}")
-            self.consume_and_release(qubit)
-            return
-
-        # Caso C: Somos el origen (No hacemos swapping, solo esperamos)
-        if is_src:
-            qubit.trace_event("qcast_src_entangled_wait", self.simulator.tc, note=f"node={self.node.name}")
-            return 
-
-        # Caso B: Somos un nodo intermedio (intentar swapping)
-        if getattr(self, 'swapping_enabled', True):
-            qubit.trace_event("qcast_attempt_swapping", self.simulator.tc, note=f"node={self.node.name}")
-            self.attempt_swapping(qubit)
+        super().qubit_is_eligible(qubit, fib_entry)
 
     def do_swapping(self, mq0, mq1, fib_entry):
-        try:
-            super().do_swapping(mq0, mq1, fib_entry)
-        except AssertionError:
-            pass
+        _, epr0 = self.node.memory.read(mq0.addr, has=self.epr_type)
+        _, epr1 = self.node.memory.read(mq1.addr, has=self.epr_type)
+        swaps_before = self.cnt.n_swapped
+        super().do_swapping(mq0, mq1, fib_entry)
+        if (
+            hasattr(self, "controller")
+            and self.controller
+            and self.controller.collect_validation_history
+        ):
+            self.controller.record_swap(
+                req_id=fib_entry.req_id,
+                path_id=fib_entry.path_id,
+                node=self.node.name,
+                success=self.cnt.n_swapped > swaps_before,
+                left_endpoints=(
+                    getattr(getattr(epr0, "src", None), "name", None),
+                    getattr(getattr(epr0, "dst", None), "name", None),
+                ),
+                right_endpoints=(
+                    getattr(getattr(epr1, "src", None), "name", None),
+                    getattr(getattr(epr1, "dst", None), "name", None),
+                ),
+            )
 
     def attempt_swapping(self, qubit):
         path_id = getattr(qubit, 'path_id', None)
@@ -171,39 +179,60 @@ class QCastForwarder(Forwarder):
             elif hasattr(memory, 'ebsm'):
                 memory.ebsm(qubit, other_qubit)
 
-    def handle_path_change(self, *, path_id: int, uninstall: bool, fib_entry, l_neighbor, r_neighbor):
+    def handle_path_change(
+        self,
+        *,
+        path_id: int,
+        uninstall: bool,
+        fib_entry,
+        l_neighbor,
+        r_neighbor,
+        channels_by_edge: dict[str, list[str]] | None = None,
+    ):
         from mqns.network.protocol.event import ManageActiveChannels
         w_asignado = 1
         if hasattr(self, 'controller') and self.controller:
             w_asignado = getattr(self.controller, 'path_w', {}).get(path_id, 1)
 
-        def asegurar_recursos(canal):
-            """
-            Allocate a qubit to the given channel and path_id.
-            If qubits already exist on the channel, assign path_id to the first one without one.
-            Otherwise, take a RAW qubit from the memory pool and assign it.
-            """
-            conectados = list(self.node.memory.find(lambda *_: True, qchannel=canal))
-            if len(conectados) > 0:
-                # Preferred: Find a qubit on this channel that doesn't have a path_id yet
-                for q, _ in conectados:
-                    if getattr(q, 'path_id', None) is None:
-                        q.path_id = path_id
-                        log.debug(f"{self.node}: Asignado qubit {q.addr} existente en canal {canal.name} a path_id {path_id}")
-                        return
-                # Fallback: Log if all qubits on this channel are already allocated
-                log.debug(f"{self.node}: Todos los qubits en {canal.name} ya tienen path_id, ninguno disponible para {path_id}")
-            else:
-                # No qubits on this channel yet, find a RAW one from the pool
-                libres = [q for q in getattr(self.node.memory, 'qubits', []) 
-                          if q.state.name == "RAW" and getattr(q, 'path_id', None) is None and getattr(q, 'qchannel', None) is None]
-                if libres:
-                    q = libres[0]
-                    q.qchannel = canal
-                    q.path_id = path_id
-                    log.debug(f"{self.node}: Asignado qubit {q.addr} nuevo al canal {canal.name} con path_id {path_id}")
-                else:
-                    log.debug(f"{self.node}: No hay qubits RAW libres disponibles para {canal.name} con path_id {path_id}")
+        def asegurar_recursos(canal, direction):
+            available = next(
+                self.node.memory.find(
+                    lambda q, _: q.state == QubitState.RAW and q.path_id is None,
+                    qchannel=canal,
+                ),
+                None,
+            )
+            if available is None:
+                reusable = next(
+                    self.node.memory.find(
+                        lambda q, _: (
+                            q.state == QubitState.RAW
+                            and q.active is None
+                            and q.path_id is None
+                        )
+                    ),
+                    None,
+                )
+                if reusable is None:
+                    raise OverflowError(
+                        f"{self.node}: no RAW qubit available for path {path_id} "
+                        f"on channel {canal.name}"
+                    )
+
+                reusable_qubit, _ = reusable
+                self.node.memory.unassign(reusable_qubit.addr)
+                self.node.memory.assign(canal, n=1)
+
+            addrs = self.node.memory.allocate(
+                canal,
+                path_id,
+                direction,
+                n=1,
+            )
+            log.debug(
+                f"{self.node}: allocated qubit {addrs[0]} on {canal.name} "
+                f"for path {path_id}"
+            )
 
         for neighbor in [l_neighbor, r_neighbor]:
             if neighbor:
@@ -213,10 +242,25 @@ class QCastForwarder(Forwarder):
                     path_id=path_id,
                     width=w_asignado,
                     uninstall=uninstall,
+                    selected_names=(
+                        channels_by_edge.get("|".join(self._edge_key(self.node.name, vecino.name)))
+                        if channels_by_edge is not None
+                        else None
+                    ),
                 )
                 for qc in canales:
                     if not uninstall:
-                        asegurar_recursos(qc)
+                        direction = PathDirection.L if neighbor == l_neighbor else PathDirection.R
+                        asegurar_recursos(qc, direction)
+                    else:
+                        addrs = [
+                            q.addr
+                            for q, _ in self.node.memory.find(
+                                lambda q, _: q.path_id == path_id,
+                                qchannel=qc,
+                            )
+                        ]
+                        self.node.memory.deallocate(*addrs)
                     if hasattr(self, 'controller') and self.controller and not uninstall and neighbor == r_neighbor:
                         if hasattr(self.controller, 'record_qchannel_activation'):
                             self.controller.record_qchannel_activation(path_id, qc.name)
@@ -244,7 +288,10 @@ class QCastForwarder(Forwarder):
             route=route,
             own_idx=own_idx,
             swap=instructions["swap"],
-            swap_cutoff=instructions.get("swap_cutoff", []),
+            swap_cutoff=[
+                None if cutoff < 0 else self.simulator.time(time_slot=cutoff)
+                for cutoff in instructions.get("swap_cutoff", [])
+            ],
             purif=instructions.get("purif", {})
         )
         self.fib.insert_or_replace(new_entry)
@@ -278,10 +325,15 @@ class QCastForwarder(Forwarder):
             uninstall=False,
             fib_entry=new_entry,
             l_neighbor=l_neighbor,
-            r_neighbor=r_neighbor
+            r_neighbor=r_neighbor,
+            channels_by_edge=instructions.get("channels_by_edge"),
         )
 
         log.debug(f"{self.node}: activó protocolo para ruta {path_id}")
+
+    @fw_control_cmd_handler("INSTALL_PATH")
+    def handle_install_path(self, msg):
+        self.install_path_command(msg)
 
     def handle_classic_packet(self, node, msg):
         log.debug(f"{self.node}: recibió mensaje clásico {msg.get('cmd')}")
@@ -294,6 +346,83 @@ class QCastForwarder(Forwarder):
         local_event = type("_LocalClassicPacketEvent", (), {"packet": ClassicPacket(msg, src=node, dest=node)})()
         self.handle_classic_command(cast(Any, local_event))
 
+    def _handle_swap_update(self, msg, fib_entry):
+        new_epr_name = msg["new_epr"]
+        if new_epr_name in self._consumed_pending_eprs:
+            self._consumed_pending_eprs.remove(new_epr_name)
+            old_pair = self.memory.read(msg["epr"])
+            if old_pair is not None:
+                self.release_qubit(old_pair[0], need_remove=True)
+            return
+        super()._handle_swap_update(msg, fib_entry)
+
+    def _release_epr_endpoints(self, local_qubit, epr) -> bool:
+        if epr.src == self.node:
+            remote_node = epr.dst
+        elif epr.dst == self.node:
+            remote_node = epr.src
+        else:
+            raise RuntimeError(
+                f"{self.node}: cannot release EPR {epr.name}; "
+                "the consuming node is not one of its endpoints"
+            )
+
+        if remote_node is None:
+            raise RuntimeError(f"{self.node}: EPR {epr.name} has no remote endpoint")
+
+        remote_matches = list(remote_node.memory.find(lambda _qubit, stored: stored is epr))
+        remote_forwarder = remote_node.get_app(Forwarder)
+        if not remote_matches:
+            pending_epr = remote_forwarder.remote_swapped_eprs.get(epr.name)
+            if pending_epr is epr and isinstance(remote_forwarder, QCastForwarder):
+                remote_forwarder.remote_swapped_eprs.pop(epr.name)
+                remote_forwarder._consumed_pending_eprs.add(epr.name)
+                self.release_qubit(local_qubit, need_remove=True)
+                return True
+            controller = getattr(getattr(self.node, "network", None), "controller", None)
+            if controller is not None:
+                controller.orphaned_e2e_count += 1
+            log.warning(
+                f"{self.node}: discarding orphaned EPR {epr.name}; "
+                f"remote endpoint {remote_node} no longer stores it"
+            )
+            self.release_qubit(local_qubit, need_remove=True)
+            return False
+        if len(remote_matches) > 1:
+            raise RuntimeError(
+                f"{self.node}: expected one remote copy of EPR {epr.name} at "
+                f"{remote_node}, found {len(remote_matches)}; "
+                f"tc={self.simulator.tc}, path_id={getattr(local_qubit, 'path_id', None)}, "
+                f"local_state={getattr(local_qubit, 'state', None)}"
+            )
+        remote_qubit, _ = remote_matches[0]
+        remote_forwarder.release_qubit(remote_qubit, need_remove=True)
+        self.release_qubit(local_qubit, need_remove=True)
+        return True
+
+    def _record_e2e_candidate(self, epr, req_id, path_id) -> None:
+        if not self.controller.collect_validation_history:
+            return
+        elementary_eprs = epr.orig_eprs or [epr]
+        self.controller.record_e2e_candidate(
+            req_id=req_id,
+            path_id=path_id,
+            epr_name=epr.name,
+            endpoints=(
+                getattr(getattr(epr, "src", None), "name", None),
+                getattr(getattr(epr, "dst", None), "name", None),
+            ),
+            elementary_eprs=[
+                {
+                    "name": elementary.name,
+                    "src": getattr(getattr(elementary, "src", None), "name", None),
+                    "dst": getattr(getattr(elementary, "dst", None), "name", None),
+                    "channel_index": elementary.ch_index,
+                }
+                for elementary in elementary_eprs
+            ],
+        )
+
     def consume_and_release(self, qubit):
         has_type = cast(Any, getattr(self, 'epr_type', None)) 
         _, qm = self.node.memory.read(qubit.addr, has=has_type, set_fidelity=True, remove=False)
@@ -305,27 +434,50 @@ class QCastForwarder(Forwarder):
         if controller is not None and path_id is not None:
             entry = self.fib.get(path_id) if hasattr(self.fib, 'get') else None
             req_id = getattr(entry, 'req_id', None)
-            if req_id:
-                try:
-                    log.debug(f"{self.node}: QCAST_REPORT_SUCCESS req_id={req_id} path_id={path_id} fidelity={qm.fidelity}")
-                except Exception:
-                    pass
-                controller.report_success(req_id, self.simulator.tc, fidelity=qm.fidelity)
+            if req_id and "__REC_" not in req_id:
+                report_req_id = req_id.split("__BACKUP_", 1)[0]
+                route = getattr(entry, "route", [])
+                expected_endpoints = {route[0], route[-1]} if len(route) >= 2 else set()
+                actual_endpoints = {
+                    getattr(getattr(qm, "src", None), "name", None),
+                    getattr(getattr(qm, "dst", None), "name", None),
+                }
+                if actual_endpoints != expected_endpoints:
+                    controller.invalid_e2e_endpoint_count = (
+                        getattr(controller, "invalid_e2e_endpoint_count", 0) + 1
+                    )
+                    log.error(
+                        f"{self.node}: refusing non-E2E completion req_id={report_req_id} "
+                        f"expected={sorted(expected_endpoints)} actual={sorted(str(v) for v in actual_endpoints)}"
+                    )
+                    self._release_epr_endpoints(qubit, qm)
+                    return
+                if not self._release_epr_endpoints(qubit, qm):
+                    return
+                self.cnt.increment_n_consumed(qm.fidelity)
+                self._record_e2e_candidate(qm, report_req_id, path_id)
+                log.debug(
+                    f"{self.node}: QCAST_REPORT_SUCCESS req_id={report_req_id} "
+                    f"path_id={path_id} fidelity={qm.fidelity}"
+                )
+                controller.report_success(
+                    report_req_id,
+                    self.simulator.tc,
+                    fidelity=qm.fidelity,
+                    path_id=path_id,
+                    path_role="backup" if "__BACKUP_" in str(req_id) else "main",
+                    epr_name=qm.name,
+                )
+            elif not self._release_epr_endpoints(qubit, qm):
+                return
+            else:
+                self.cnt.increment_n_consumed(qm.fidelity)
 
             qubit.trace_event("qcast_consume", self.simulator.tc, note=f"node={self.node.name} fidelity={qm.fidelity}")
-                
-        # 1. Liberamos el qubit local (Destino)
-        self.release_qubit(qubit)
+            return
 
-        # 2. FIX CRÍTICO: Liberamos el qubit remoto (Origen) para evitar el Memory Leak!
-        remote_qubit = getattr(qubit, 'entangled_qubit', None)
-        if remote_qubit is not None:
-            if hasattr(remote_qubit.node, 'forwarder'):
-                remote_qubit.node.forwarder.release_qubit(remote_qubit)
-            else:
-                remote_qubit.state = QubitState.RAW
-                remote_qubit.path_id = None
-                remote_qubit.trace_event("qcast_remote_release_raw", self.simulator.tc, note=f"node={remote_qubit.node.name}")
+        if self._release_epr_endpoints(qubit, qm):
+            self.cnt.increment_n_consumed(qm.fidelity)
 
     def handle_sync_phase(self, event: TimingPhaseEvent):
         phase_name = str(event.phase).split('.')[-1]
@@ -333,7 +485,10 @@ class QCastForwarder(Forwarder):
         # FIX DE Q-CAST: En la fase P1 (Inicio de ciclo), limpiamos la basura del ciclo anterior
         if phase_name == "P1":
             self._aggressive_cleanup()
-            if not self.request_sent:
+            manages_cycles = bool(
+                getattr(getattr(self, "controller", None), "manage_routes_each_cycle", False)
+            )
+            if not self.request_sent and not manages_cycles:
                 self._send_initial_queries()
                 self.request_sent = True
                 
@@ -355,6 +510,7 @@ class QCastForwarder(Forwarder):
         """
         current_tc = self.simulator.tc
         current_sec = current_tc.sec
+        self._consumed_pending_eprs.clear()
         
         for q in getattr(self.node.memory, 'qubits', []):
             q_state = q.state.name if hasattr(q.state, 'name') else str(q.state)
@@ -388,13 +544,3 @@ class QCastForwarder(Forwarder):
                     req_id = req.attr.get("req_id", f"REQ_{req.src.name}_TO_{req.dst.name}")
                     msg = {"cmd": "QCAST_QUERY", "req_id": req_id, "src": req.src.name, "dst": req.dst.name}
                     net.controller.handle_classic_packet(self.node, msg)
-
-class QCastMultiEntForwarder(QCastForwarder):
-    """Q-CAST forwarder for the multi-entanglement variant.
-
-    Swapping behaviour is identical to QCastForwarder (cross-channel within
-    the same req_id).  The difference between the two algorithms lies only in
-    the controller: QCastMultiEntController counts every successful E2E
-    entanglement, whereas QCastController caps at 1 per req_id.
-    """
-    pass

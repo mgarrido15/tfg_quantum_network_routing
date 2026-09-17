@@ -913,28 +913,26 @@ class Forwarder(ForwarderClassicMixin, Application[QNode]):
 
         # If a central controller exists (e.g., QCastController), notify it of
         # an end-to-end successful entanglement so metrics are updated.
-        try:
-            net = getattr(self.node, 'network', None)
-            controller = getattr(net, 'controller', None)
-            path_id = getattr(qubit, 'path_id', None)
-            if controller is not None and path_id is not None and hasattr(self.fib, 'get'):
-                try:
-                    entry = self.fib.get(path_id)
-                    req_id = getattr(entry, 'req_id', None)
-                    if req_id:
-                        # Log and report success to controller (if available)
-                        try:
-                            log.debug(f"{self.node}: REPORT_SUCCESS req_id={req_id} path_id={path_id} fidelity={qm.fidelity}")
-                        except Exception:
-                            pass
-                        # report_success may be defined on QCastController; call if available
-                        if hasattr(controller, 'report_success'):
-                            controller.report_success(req_id, self.simulator.tc, fidelity=qm.fidelity)
-                except Exception:
-                    # Silently ignore issues resolving FIB entry
-                    pass
-        except Exception:
-            pass
+        net = getattr(self.node, 'network', None)
+        controller = getattr(net, 'controller', None)
+        path_id = getattr(qubit, 'path_id', None)
+        if controller is not None and path_id is not None:
+            try:
+                entry = self.fib.get(path_id)
+            except IndexError:
+                log.warning(
+                    f"{self.node}: consumed EPR for unknown path_id={path_id}; "
+                    "success was not reported"
+                )
+            else:
+                req_id = entry.req_id
+                report_success = getattr(controller, 'report_success', None)
+                if req_id is not None and callable(report_success):
+                    log.debug(
+                        f"{self.node}: REPORT_SUCCESS req_id={req_id} "
+                        f"path_id={path_id} fidelity={qm.fidelity}"
+                    )
+                    report_success(req_id, self.simulator.tc, fidelity=qm.fidelity)
 
         self.release_qubit(qubit)
 

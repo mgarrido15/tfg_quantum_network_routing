@@ -26,9 +26,8 @@ class LinkArchSim(LinkArchBase):
         # - eta_d: the detector at A or B detects the photon.
         #
         # The overall success probability has `**2` because it requires both photons.
-        _ = eta_s
         p_l_sb = calc_transmission_prob(length / 2, alpha)
-        eta_rr = (eta_d * p_l_sb) ** 2
+        eta_rr = eta_s * (eta_d * p_l_sb) ** 2
         return eta_rr
 
     @override

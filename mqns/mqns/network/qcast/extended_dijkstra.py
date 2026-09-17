@@ -18,9 +18,17 @@ class QCastExtendedDijkstra(RouteAlgorithm):
         self.adj = {node: {} for node in nodes}
         for ch in channels:
             u, v = ch.node_list if hasattr(ch, 'node_list') else (ch.node1, ch.node2)
-            p = getattr(ch, 'success_prob', 0.99)
-            self.adj[u][v] = p
-            self.adj[v][u] = p
+            p = float(getattr(ch, 'success_prob', 0.99))
+            for left, right in ((u, v), (v, u)):
+                edge = self.adj[left].get(right)
+                if edge is None:
+                    self.adj[left][right] = {"success_prob": p, "width": 1}
+                else:
+                    old_width = edge["width"]
+                    edge["width"] = old_width + 1
+                    edge["success_prob"] = (
+                        edge["success_prob"] * old_width + p
+                    ) / edge["width"]
 
     def _calcular_ext_y_probabilidades(self, W_actual: int, p_enlace: float, P_array_anterior: list, is_first_hop: bool):
         Q_array = [0.0] * (W_actual + 1)
@@ -50,6 +58,7 @@ class QCastExtendedDijkstra(RouteAlgorithm):
 
     def query(self, src, dst, *args, **kwargs):
         virtual_widths = kwargs.get('virtual_widths', {}) or {}
+        virtual_edge_widths = kwargs.get('virtual_edge_widths', {}) or {}
         has_virtual_widths = bool(virtual_widths)
         if virtual_widths and (virtual_widths.get(src, 0) <= 0 or virtual_widths.get(dst, 0) <= 0):
             return []
@@ -82,7 +91,8 @@ class QCastExtendedDijkstra(RouteAlgorithm):
                 metric_final = -curr_e_neg
                 return self._reconstruct(prev, src, dst, metric_final)
 
-            for v, p_link in self.adj[u].items():
+            for v, edge in self.adj[u].items():
+                p_link = edge["success_prob"]
                 cubits_v = virtual_widths.get(v, self._fallback_width()) if has_virtual_widths else self._fallback_width()
                 if visited[v] or (has_virtual_widths and virtual_widths.get(v, 0) <= 0): 
                     continue
@@ -96,8 +106,11 @@ class QCastExtendedDijkstra(RouteAlgorithm):
                 if max_channels_v <= 0:
                     continue
                 
-                # El ancho (W) es el cuello de botella entre los nodos
-                w_prime = int(min(width[u], max_channels_v))
+                edge_key = tuple(sorted((u.name, v.name)))
+                edge_width = int(virtual_edge_widths.get(edge_key, edge["width"]))
+
+                # El ancho (W) es el cuello de botella entre nodos y enlace.
+                w_prime = int(min(width[u], max_channels_v, edge_width))
 
                 if w_prime <= 0:
                     continue

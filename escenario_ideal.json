@@ -1,0 +1,1131 @@
+{
+  "nodos": [
+    {
+      "id": "n1",
+      "capacity": 20,
+      "fidelity": 0.95
+    },
+    {
+      "id": "n2",
+      "capacity": 25,
+      "fidelity": 0.97
+    },
+    {
+      "id": "n3",
+      "capacity": 25,
+      "fidelity": 0.96
+    },
+    {
+      "id": "n4",
+      "capacity": 20,
+      "fidelity": 0.94
+    },
+    {
+      "id": "n5",
+      "capacity": 25,
+      "fidelity": 0.98
+    },
+    {
+      "id": "n6",
+      "capacity": 25,
+      "fidelity": 0.95
+    },
+    {
+      "id": "n7",
+      "capacity": 30,
+      "fidelity": 0.97
+    },
+    {
+      "id": "n8",
+      "capacity": 25,
+      "fidelity": 0.96
+    },
+    {
+      "id": "n9",
+      "capacity": 25,
+      "fidelity": 0.97
+    },
+    {
+      "id": "n10",
+      "capacity": 30,
+      "fidelity": 0.93
+    },
+    {
+      "id": "n11",
+      "capacity": 25,
+      "fidelity": 0.98
+    },
+    {
+      "id": "n12",
+      "capacity": 25,
+      "fidelity": 0.96
+    },
+    {
+      "id": "n13",
+      "capacity": 30,
+      "fidelity": 0.95
+    },
+    {
+      "id": "n14",
+      "capacity": 25,
+      "fidelity": 0.97
+    },
+    {
+      "id": "n15",
+      "capacity": 25,
+      "fidelity": 0.94
+    },
+    {
+      "id": "n16",
+      "capacity": 20,
+      "fidelity": 0.98
+    },
+    {
+      "id": "n17",
+      "capacity": 20,
+      "fidelity": 0.96
+    },
+    {
+      "id": "n18",
+      "capacity": 20,
+      "fidelity": 0.97
+    },
+    {
+      "id": "n19",
+      "capacity": 20,
+      "fidelity": 0.95
+    },
+    {
+      "id": "n20",
+      "capacity": 24,
+      "fidelity": 0.98
+    },
+    {
+      "id": "n21",
+      "capacity": 12,
+      "fidelity": 0.93
+    },
+    {
+      "id": "n22",
+      "capacity": 18,
+      "fidelity": 0.96
+    },
+    {
+      "id": "n23",
+      "capacity": 17,
+      "fidelity": 0.97
+    },
+    {
+      "id": "n24",
+      "capacity": 21,
+      "fidelity": 0.97
+    },
+    {
+      "id": "n25",
+      "capacity": 15,
+      "fidelity": 0.95
+    },
+    {
+      "id": "n26",
+      "capacity": 20,
+      "fidelity": 0.98
+    },
+    {
+      "id": "n27",
+      "capacity": 13,
+      "fidelity": 0.94
+    },
+    {
+      "id": "n28",
+      "capacity": 22,
+      "fidelity": 0.96
+    },
+    {
+      "id": "n29",
+      "capacity": 16,
+      "fidelity": 0.97
+    },
+    {
+      "id": "n30",
+      "capacity": 19,
+      "fidelity": 0.95
+    },
+    {
+      "id": "n31",
+      "capacity": 25,
+      "fidelity": 0.98
+    },
+    {
+      "id": "n32",
+      "capacity": 15,
+      "fidelity": 0.93
+    },
+    {
+      "id": "n33",
+      "capacity": 18,
+      "fidelity": 0.96
+    },
+    {
+      "id": "n34",
+      "capacity": 21,
+      "fidelity": 0.97
+    },
+    {
+      "id": "n35",
+      "capacity": 15,
+      "fidelity": 0.95
+    },
+    {
+      "id": "n36",
+      "capacity": 20,
+      "fidelity": 0.98
+    },
+    {
+      "id": "n37",
+      "capacity": 17,
+      "fidelity": 0.94
+    },
+    {
+      "id": "n38",
+      "capacity": 23,
+      "fidelity": 0.97
+    },
+    {
+      "id": "n39",
+      "capacity": 16,
+      "fidelity": 0.96
+    },
+    {
+      "id": "n40",
+      "capacity": 19,
+      "fidelity": 0.97
+    }
+  ],
+  "enlaces": [
+    {
+      "u": "n1",
+      "v": "n2",
+      "length": 0.2935733,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.997801,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n1",
+      "v": "n20",
+      "length": 1.08771246,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.991886,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n1",
+      "v": "n3",
+      "length": 0.572052156,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.995722,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n1",
+      "v": "n4",
+      "length": 0.905835155,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.993237,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n10",
+      "v": "n21",
+      "length": 0.674209235,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.99496,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n10",
+      "v": "n22",
+      "length": 0.369168586,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.997236,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n10",
+      "v": "n32",
+      "length": 0.828351668,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.993813,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n10",
+      "v": "n34",
+      "length": 1.113819736,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.991693,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n10",
+      "v": "n4",
+      "length": 0.419712046,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.996859,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n10",
+      "v": "n9",
+      "length": 0.419712046,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.996859,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n11",
+      "v": "n12",
+      "length": 0.445027962,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.99667,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n11",
+      "v": "n23",
+      "length": 0.470373426,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.99648,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n11",
+      "v": "n24",
+      "length": 0.546587804,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.995912,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n11",
+      "v": "n3",
+      "length": 0.905835155,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.993237,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n11",
+      "v": "n5",
+      "length": 0.318742499,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.997613,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n12",
+      "v": "n25",
+      "length": 0.394425611,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.997048,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n12",
+      "v": "n26",
+      "length": 0.597546405,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.995532,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n12",
+      "v": "n36",
+      "length": 0.802585158,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.994005,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n12",
+      "v": "n5",
+      "length": 0.597546405,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.995532,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n13",
+      "v": "n14",
+      "length": 0.470373426,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.99648,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n13",
+      "v": "n27",
+      "length": 0.572052156,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.995722,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n13",
+      "v": "n28",
+      "length": 0.419712046,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.996859,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n13",
+      "v": "n35",
+      "length": 1.08771246,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.991886,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n13",
+      "v": "n38",
+      "length": 0.85414879,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.993621,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n13",
+      "v": "n6",
+      "length": 0.470373426,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.99648,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n14",
+      "v": "n29",
+      "length": 0.495748508,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.996291,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n14",
+      "v": "n30",
+      "length": 0.623070621,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.995341,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n14",
+      "v": "n5",
+      "length": 0.802585158,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.994005,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n14",
+      "v": "n6",
+      "length": 0.648624874,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.995151,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n15",
+      "v": "n16",
+      "length": 0.495748508,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.996291,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n15",
+      "v": "n31",
+      "length": 0.445027962,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.99667,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n15",
+      "v": "n32",
+      "length": 0.546587804,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.995912,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n15",
+      "v": "n40",
+      "length": 0.905835155,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.993237,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n15",
+      "v": "n7",
+      "length": 0.394425611,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.997048,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n16",
+      "v": "n33",
+      "length": 0.470373426,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.99648,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n16",
+      "v": "n34",
+      "length": 0.572052156,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.995722,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n16",
+      "v": "n7",
+      "length": 0.623070621,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.995341,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n17",
+      "v": "n18",
+      "length": 0.521153278,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.996102,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n17",
+      "v": "n35",
+      "length": 0.419712046,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.996859,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n17",
+      "v": "n36",
+      "length": 0.597546405,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.995532,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n17",
+      "v": "n8",
+      "length": 0.445027962,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.99667,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n18",
+      "v": "n37",
+      "length": 0.521153278,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.996102,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n18",
+      "v": "n38",
+      "length": 0.495748508,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.996291,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n18",
+      "v": "n8",
+      "length": 0.572052156,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.995722,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n19",
+      "v": "n20",
+      "length": 0.546587804,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.995912,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n19",
+      "v": "n39",
+      "length": 0.623070621,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.995341,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n19",
+      "v": "n40",
+      "length": 0.445027962,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.99667,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n19",
+      "v": "n9",
+      "length": 0.546587804,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.995912,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n2",
+      "v": "n3",
+      "length": 0.343940905,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.997425,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n2",
+      "v": "n5",
+      "length": 0.21824027,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.998365,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n2",
+      "v": "n6",
+      "length": 0.495748508,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.996291,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n2",
+      "v": "n7",
+      "length": 0.828351668,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.993813,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n20",
+      "v": "n6",
+      "length": 0.85414879,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.993621,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n20",
+      "v": "n9",
+      "length": 0.495748508,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.996291,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n21",
+      "v": "n22",
+      "length": 0.394425611,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.997048,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n23",
+      "v": "n24",
+      "length": 0.419712046,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.996859,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n24",
+      "v": "n8",
+      "length": 0.879976594,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.993429,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n25",
+      "v": "n26",
+      "length": 0.445027962,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.99667,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n26",
+      "v": "n4",
+      "length": 1.061636534,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.99208,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n27",
+      "v": "n28",
+      "length": 0.470373426,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.99648,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n28",
+      "v": "n9",
+      "length": 0.776849186,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.994196,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n29",
+      "v": "n30",
+      "length": 0.495748508,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.996291,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n3",
+      "v": "n7",
+      "length": 0.546587804,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.995912,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n3",
+      "v": "n8",
+      "length": 0.369168586,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.997236,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n31",
+      "v": "n32",
+      "length": 0.521153278,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.996102,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n31",
+      "v": "n7",
+      "length": 1.035591885,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.992273,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n33",
+      "v": "n34",
+      "length": 0.546587804,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.995912,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n35",
+      "v": "n36",
+      "length": 0.572052156,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.995722,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n37",
+      "v": "n38",
+      "length": 0.597546405,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.995532,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n39",
+      "v": "n40",
+      "length": 0.623070621,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.995341,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n4",
+      "v": "n9",
+      "length": 0.699823776,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.99477,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n5",
+      "v": "n6",
+      "length": 0.369168586,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.997236,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n7",
+      "v": "n8",
+      "length": 0.394425611,
+      "alpha": 0.2,
+      "eta_s": 1.0,
+      "eta_d": 1.0,
+      "channels": 5,
+      "fidelity": 0.997048,
+      "transfer_error": "DEPOLAR:0.01"
+    }
+  ],
+  "solicitudes": [
+    {
+      "src": "n1",
+      "dst": "n40"
+    },
+    {
+      "src": "n2",
+      "dst": "n39"
+    },
+    {
+      "src": "n3",
+      "dst": "n38"
+    },
+    {
+      "src": "n4",
+      "dst": "n37"
+    },
+    {
+      "src": "n5",
+      "dst": "n36"
+    },
+    {
+      "src": "n6",
+      "dst": "n35"
+    },
+    {
+      "src": "n7",
+      "dst": "n34"
+    },
+    {
+      "src": "n8",
+      "dst": "n33"
+    },
+    {
+      "src": "n9",
+      "dst": "n32"
+    },
+    {
+      "src": "n10",
+      "dst": "n31"
+    },
+    {
+      "src": "n11",
+      "dst": "n30"
+    },
+    {
+      "src": "n12",
+      "dst": "n29"
+    },
+    {
+      "src": "n13",
+      "dst": "n28"
+    },
+    {
+      "src": "n14",
+      "dst": "n27"
+    },
+    {
+      "src": "n15",
+      "dst": "n26"
+    },
+    {
+      "src": "n16",
+      "dst": "n25"
+    },
+    {
+      "src": "n17",
+      "dst": "n24"
+    },
+    {
+      "src": "n18",
+      "dst": "n23"
+    },
+    {
+      "src": "n19",
+      "dst": "n22"
+    },
+    {
+      "src": "n20",
+      "dst": "n21"
+    },
+    {
+      "src": "n1",
+      "dst": "n15"
+    },
+    {
+      "src": "n2",
+      "dst": "n16"
+    },
+    {
+      "src": "n3",
+      "dst": "n17"
+    },
+    {
+      "src": "n4",
+      "dst": "n18"
+    },
+    {
+      "src": "n5",
+      "dst": "n19"
+    },
+    {
+      "src": "n6",
+      "dst": "n12"
+    },
+    {
+      "src": "n7",
+      "dst": "n13"
+    },
+    {
+      "src": "n8",
+      "dst": "n14"
+    },
+    {
+      "src": "n9",
+      "dst": "n11"
+    },
+    {
+      "src": "n10",
+      "dst": "n30"
+    }
+  ]
+}

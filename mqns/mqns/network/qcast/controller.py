@@ -1,28 +1,42 @@
-import os
+import copy
+import random
 import time
+from collections.abc import Callable
 from typing import Any, cast
 from mqns.entity.cchannel import ClassicPacket
 from mqns.network.network.timing import TimingPhaseEvent
 from mqns.network.network.reporting import obtener_prob_y_fidelidad_de_ruta
 from mqns.network.fw.controller import RoutingController
 from mqns.network.fw.routing import RoutingPathStatic
+from mqns.network.fw.swap_sequence import SwapSequenceInput
 from mqns.network.qcast.extended_dijkstra import QCastExtendedDijkstra
-from mqns.utils import log, rng
+from mqns.utils import log
 
 class QCastController(RoutingController):
+    count_multiple_e2e_per_cycle = False
+
     def __init__(
         self,
         k_max: int = 4,
         enable_recovery_paths: bool = True,
         max_alloc_width: int | None = None,
+        swap_policy: SwapSequenceInput = "asap",
+        q_swap: float = 1.0,
+        collect_validation_history: bool = False,
+        priority_seed: int = 0,
     ):
         super().__init__()
         self.k_max = k_max
         self.enable_recovery_paths = enable_recovery_paths
         self.max_alloc_width = max_alloc_width
+        self.swap_policy: SwapSequenceInput = swap_policy
+        self.collect_validation_history = collect_validation_history
+        self.priority_seed = priority_seed
+        self.priority_rng = random.Random(priority_seed)
         self.paths = []
         self.pending_qcast_queries = []
-        self.eda = QCastExtendedDijkstra()
+        self.eda = QCastExtendedDijkstra(q_swap=q_swap)
+        self.q_swap = q_swap
         self.net = None
         
         # Estadísticas de ciclo y éxito
@@ -32,32 +46,48 @@ class QCastController(RoutingController):
         
         # Diccionarios de estado interno
         self.node_remaining_capacity = {}
+        self.edge_remaining_capacity: dict[tuple[str, str], int] = {}
         self.successful_requests = 0
         self.request_route_info = {}
         self.request_success = {}
         self.request_success_count = {}
         self.request_fidelities: dict[str, list[float]] = {}
+        self.e2e_candidate_history: list[dict[str, Any]] = []
+        self.e2e_completion_history: list[dict[str, Any]] = []
+        self.swap_history: list[dict[str, Any]] = []
+        self.invalid_e2e_endpoint_count = 0
+        self.orphaned_e2e_count = 0
         self.request_install_stats = {}
         self.route_owner_req = {}
         self.route_alias_reqs = {}
         self.route_rr_index = {}
         self.path_w = {}
-        self.path_channel_allocations = {}
+        self.path_channel_allocations: dict[int, dict[str, list[str]]] = {}
+        self.path_channel_allocation_history: dict[int, dict[str, list[str]]] = {}
         self.path_requests: dict[int, list[str]] = {}
+        self.path_request_history: dict[int, list[str]] = {}
         self.main_paths_by_req: dict[str, list[int]] = {}
         self.path_route_names: dict[int, list[str]] = {}
+        self.path_route_history: dict[int, list[str]] = {}
         self.recovery_paths_info = {}
+        self.recovery_path_history: dict[int, dict[str, Any]] = {}
         self.qchannel_activations_by_path: dict[int, int] = {}
         self.qchannel_activation_names_by_path: dict[int, list[str]] = {}
         self.eligible_total = 0
         self.eligible_by_cycle: dict[int, int] = {}
         self.local_entanglement_total = 0
         self.local_entanglement_by_cycle: dict[int, dict[str, Any]] = {}
+        self.local_attempts_by_request: dict[str, int] = {}
+        self.local_successes_by_request: dict[str, int] = {}
         self.p4_phase_count = 0
         self.p4_recovery_applied = 0
         self.qcast_route_calc_time_total = 0.0
         self.qcast_route_calc_runs = 0
         self._success_reported_this_cycle: set = set()
+        self.manage_routes_each_cycle = False
+        self.active_cycle_requests: list[dict[str, str]] = []
+        self.cycle_route_callback: Callable[[list[dict[str, str]]], None] | None = None
+        self.request_route_history: dict[int, dict[str, dict[str, Any]]] = {}
 
     def _cycle_from_time(self, time) -> int:
         return int(round(time.sec / 4.0)) if time is not None and hasattr(time, "sec") else 0
@@ -70,11 +100,19 @@ class QCastController(RoutingController):
 
     def record_eligible(self):
         self.eligible_total += 1
-        cycle = self._cycle_from_time(self.net.simulator.tc) if self.net and getattr(self.net, 'simulator', None) else 0
+        cycle = self.current_cycle
         self.eligible_by_cycle[cycle] = self.eligible_by_cycle.get(cycle, 0) + 1
 
-    def record_local_entanglement(self, qchannel_name: str, *, success: bool, time) -> None:
-        cycle = self._cycle_from_time(time)
+    def record_local_entanglement(
+        self,
+        qchannel_name: str,
+        *,
+        success: bool,
+        time,
+        path_id: int | None = None,
+    ) -> None:
+        _ = time
+        cycle = self.current_cycle
         cycle_stats = self.local_entanglement_by_cycle.setdefault(
             cycle,
             {
@@ -82,6 +120,7 @@ class QCastController(RoutingController):
                 "successes": 0,
                 "failures": 0,
                 "channels": {},
+                "paths": {},
             },
         )
         cycle_stats["attempts"] += 1
@@ -92,7 +131,66 @@ class QCastController(RoutingController):
         )
         channel_stats["attempts"] += 1
         channel_stats["successes" if success else "failures"] += 1
+        if self.collect_validation_history:
+            path_stats = cycle_stats["paths"].setdefault(
+                str(path_id),
+                {"attempts": 0, "successes": 0, "failures": 0},
+            )
+            path_stats["attempts"] += 1
+            path_stats["successes" if success else "failures"] += 1
+        request_ids = self.path_requests.get(path_id, []) if path_id is not None else []
+        for path_req_id in request_ids:
+            base_req_id = str(path_req_id).split("__BACKUP_", 1)[0]
+            self.local_attempts_by_request[base_req_id] = (
+                self.local_attempts_by_request.get(base_req_id, 0) + 1
+            )
+            if success:
+                self.local_successes_by_request[base_req_id] = (
+                    self.local_successes_by_request.get(base_req_id, 0) + 1
+                )
         self.local_entanglement_total += 1
+
+    def record_e2e_candidate(
+        self,
+        *,
+        req_id: str,
+        path_id: int,
+        epr_name: str,
+        endpoints: tuple[str | None, str | None],
+        elementary_eprs: list[dict[str, Any]],
+    ) -> None:
+        if not self.collect_validation_history:
+            return
+        self.e2e_candidate_history.append({
+            "cycle": self.current_cycle,
+            "req_id": req_id,
+            "path_id": path_id,
+            "epr_name": epr_name,
+            "endpoints": list(endpoints),
+            "elementary_eprs": elementary_eprs,
+        })
+
+    def record_swap(
+        self,
+        *,
+        req_id: str | int,
+        path_id: int,
+        node: str,
+        success: bool,
+        left_endpoints: tuple[str | None, str | None],
+        right_endpoints: tuple[str | None, str | None],
+    ) -> None:
+        if not self.collect_validation_history:
+            return
+        self.swap_history.append({
+            "cycle": self.current_cycle,
+            "req_id": req_id,
+            "path_id": path_id,
+            "node": node,
+            "success": success,
+            "left_endpoints": list(left_endpoints),
+            "right_endpoints": list(right_endpoints),
+        })
 
     def record_p4_phase(self):
         self.p4_phase_count += 1
@@ -111,12 +209,54 @@ class QCastController(RoutingController):
         self.next_req_id = getattr(self, 'next_req_id', 0)
         self.next_path_id = getattr(self, 'next_path_id', 0)
 
-    def handle_classic_packet(self, node, msg):
+    def handle_classic_packet(self, _node, msg):
         """FASE P1: Recepción de solicitudes."""
             
         if msg.get("cmd") == "QCAST_QUERY":
             self.pending_qcast_queries.append(msg)
             log.debug(f"QCastController: recibida petición {msg['req_id']} de {msg['src']}")
+
+    def configure_cycle_routing(
+        self,
+        requests: list[dict[str, Any]],
+        route_callback: Callable[[list[dict[str, str]]], None] | None = None,
+    ) -> None:
+        self.manage_routes_each_cycle = True
+        self.active_cycle_requests = [
+            {
+                "req_id": str(req["req_id"]),
+                "src": req["src"].name,
+                "dst": req["dst"].name,
+            }
+            for req in requests
+        ]
+        self.cycle_route_callback = route_callback
+
+    def _uninstall_cycle_paths(self) -> None:
+        if self.net is None:
+            raise RuntimeError("Q-CAST controller is not attached to a network")
+
+        for path_id, route in list(self.path_route_names.items()):
+            uninstall_msg = {"cmd": "UNINSTALL_PATH", "path_id": path_id}
+            for node_name in route:
+                node = self.net.get_node(node_name)
+                forwarder = getattr(node, "forwarder", None)
+                if forwarder is not None and path_id in forwarder.fib.table:
+                    forwarder.handle_classic_packet(node, uninstall_msg)
+
+        self.node_remaining_capacity.clear()
+        self.edge_remaining_capacity.clear()
+        self.request_route_info.clear()
+        self.request_install_stats.clear()
+        self.route_owner_req.clear()
+        self.route_alias_reqs.clear()
+        self.route_rr_index.clear()
+        self.path_w.clear()
+        self.path_channel_allocations.clear()
+        self.path_requests.clear()
+        self.main_paths_by_req.clear()
+        self.path_route_names.clear()
+        self.recovery_paths_info.clear()
 
     def handle(self, event):
         if isinstance(event, TimingPhaseEvent):
@@ -124,24 +264,32 @@ class QCastController(RoutingController):
 
     def handle_sync_phase(self, event: TimingPhaseEvent):
         phase_name = str(event.phase).split('.')[-1]
-        
+
+        if phase_name == "P1" and self.manage_routes_each_cycle:
+            self._uninstall_cycle_paths()
+            self.pending_qcast_queries = [dict(req) for req in self.active_cycle_requests]
+
         # Ejecutamos el enrutamiento en P2
         if phase_name == "P2":
+            self.current_cycle += 1
             self._success_reported_this_cycle.clear()
             if self.pending_qcast_queries:
-                self.current_cycle += 1
-                rng.shuffle(self.pending_qcast_queries)
+                self.priority_rng.shuffle(self.pending_qcast_queries)
                 self.query_order_by_cycle[self.current_cycle] = [req.get("req_id") for req in self.pending_qcast_queries]
                 inicio_calculo_rutas = time.perf_counter()
-                self._process_all_qcast_requests()
+                if self.cycle_route_callback is None:
+                    self._process_all_qcast_requests()
+                else:
+                    cycle_requests = list(self.pending_qcast_queries)
+                    self.pending_qcast_queries.clear()
+                    self.cycle_route_callback(cycle_requests)
                 self.qcast_route_calc_time_total += time.perf_counter() - inicio_calculo_rutas
                 self.qcast_route_calc_runs += 1
+            self.request_route_history[self.current_cycle] = copy.deepcopy(self.request_route_info)
         
         # Ejecutamos la recuperación de rutas en P4
         elif phase_name == "P4":
             self.record_p4_phase()
-            if self.enable_recovery_paths:
-                self._handle_p4_swapping_recovery()
 
     def _deliver_install_path(self, qnode, install_msg):
         if qnode == self.node:
@@ -165,7 +313,52 @@ class QCastController(RoutingController):
                 cap = cap // 2
             bottleneck = min(bottleneck, cap)
 
-        return int(bottleneck) if bottleneck != float('inf') else 0
+        if bottleneck == float('inf') or len(route_objs) < 2 or self.net is None:
+            return 0
+        channel_width = min(
+            self.edge_remaining_capacity.get(
+                tuple(sorted((route_objs[i].name, route_objs[i + 1].name))),
+                0,
+            )
+            for i in range(len(route_objs) - 1)
+        )
+        return min(int(bottleneck), channel_width)
+
+    def _allocate_route_channels(
+        self,
+        route_objs: list[Any],
+        path_id: int,
+        width: int,
+    ) -> dict[str, list[str]]:
+        if self.net is None:
+            raise RuntimeError("Q-CAST controller is not attached to a network")
+
+        used_names = {
+            channel_name
+            for allocation in self.path_channel_allocations.values()
+            for names in allocation.values()
+            for channel_name in names
+        }
+        allocation: dict[str, list[str]] = {}
+        for left, right in zip(route_objs[:-1], route_objs[1:]):
+            edge_id = "|".join(sorted((left.name, right.name)))
+            available = [
+                channel.name
+                for channel in self.net.get_qchannels_between(left.name, right.name)
+                if channel.name not in used_names
+            ]
+            if len(available) < width:
+                raise RuntimeError(
+                    f"Insufficient physical channels for path {path_id} on edge {edge_id}: "
+                    f"required={width}, available={len(available)}"
+                )
+            selected = available[:width]
+            allocation[edge_id] = selected
+            used_names.update(selected)
+
+        self.path_channel_allocations[path_id] = allocation
+        self.path_channel_allocation_history[path_id] = copy.deepcopy(allocation)
+        return allocation
 
     def _query_route_without_edges(self, src_node, dst_node, excluded_edges, virtual_widths):
         removed_edges = []
@@ -177,7 +370,12 @@ class QCastController(RoutingController):
                 if right_node in self.eda.adj and left_node in self.eda.adj[right_node]:
                     removed_edges.append((right_node, left_node, self.eda.adj[right_node][left_node]))
                     del self.eda.adj[right_node][left_node]
-            return self.eda.query(src_node, dst_node, virtual_widths=virtual_widths)
+            return self.eda.query(
+                src_node,
+                dst_node,
+                virtual_widths=virtual_widths,
+                virtual_edge_widths=dict(self.edge_remaining_capacity),
+            )
         finally:
             for left_node, right_node, p_link in removed_edges:
                 self.eda.adj.setdefault(left_node, {})[right_node] = p_link
@@ -186,10 +384,18 @@ class QCastController(RoutingController):
         """Initialize residual capacity once, then keep decrementing it as paths are installed."""
         if self.node_remaining_capacity:
             return
+        if self.net is None:
+            raise RuntimeError("Q-CAST controller is not attached to a network")
 
         self.node_remaining_capacity = {
             node: int(getattr(getattr(node, 'memory', None), 'capacity', 0))
             for node in nodes_list
+        }
+        self.edge_remaining_capacity = {
+            tuple(sorted((left.name, right.name))): len(self.net.get_qchannels_between(left.name, right.name))
+            for index, left in enumerate(nodes_list)
+            for right in nodes_list[index + 1:]
+            if self.net.get_qchannels_between(left.name, right.name)
         }
 
     def _process_all_qcast_requests(self):
@@ -226,21 +432,18 @@ class QCastController(RoutingController):
                 dst_node = self.net.get_node(req["dst"])
                 
                 # Buscamos ruta en el grafo residual actual
-                result = self.eda.query(src_node, dst_node, virtual_widths=dict(self.node_remaining_capacity))
+                result = self.eda.query(
+                    src_node,
+                    dst_node,
+                    virtual_widths=dict(self.node_remaining_capacity),
+                    virtual_edge_widths=dict(self.edge_remaining_capacity),
+                )
                 
                 if result and len(result) > 0:
                     route_objs = result[0].route
                     metric = result[0].metric
                     
-                    # Calcular el cuello de botella (bottleneck) de esta ruta
-                    w_bottleneck = float('inf')
-                    for i, node in enumerate(route_objs):
-                        cap = self.node_remaining_capacity.get(node, 0)
-                        if i != 0 and i != len(route_objs) - 1:
-                            cap = cap // 2  
-                        w_bottleneck = min(w_bottleneck, cap)
-                    
-                    w_bottleneck = int(w_bottleneck)
+                    w_bottleneck = self._route_bottleneck_width(route_objs)
                     if self.max_alloc_width is not None and self.max_alloc_width > 0:
                         w_bottleneck = min(w_bottleneck, int(self.max_alloc_width))
 
@@ -280,10 +483,12 @@ class QCastController(RoutingController):
             dst_node = self.net.get_node(req["dst"])
             route_objs = result.route
             route_names = [n.name for n in route_objs]
-            route_prob, route_fidelity = obtener_prob_y_fidelidad_de_ruta(self.net, route_objs)
+            route_prob, route_fidelity = obtener_prob_y_fidelidad_de_ruta(
+                self.net,
+                route_objs,
+                q_swap=self.q_swap,
+            )
             route_hops = len(route_objs) - 1
-            recovery_candidates: list[dict[str, Any]] = []
-            recovery_routes_seen: set[tuple[str, ...]] = set()
 
             if req_id not in self.request_route_info:
                 self.request_route_info[req_id] = {
@@ -308,136 +513,57 @@ class QCastController(RoutingController):
             self.next_path_id += 1
             self.path_w[path_id] = w_real
             self.path_route_names[path_id] = route_names
+            self.path_route_history[path_id] = list(route_names)
             self.main_paths_by_req.setdefault(req_id, []).append(path_id)
+            channels_by_edge = self._allocate_route_channels(route_objs, path_id, w_real)
             
-            route_path = RoutingPathStatic(route_names, req_id=0, path_id=path_id, m_v=self._build_fair_m_v(route_names, w=w_real))
+            route_path = RoutingPathStatic(
+                route_names,
+                req_id=0,
+                path_id=path_id,
+                m_v=self._build_fair_m_v(route_names, w=w_real),
+                swap=self.swap_policy,
+            )
             instructions = next(route_path.compute_paths(self.net))
-            instructions["req_id"] = req_id
+            cast(Any, instructions)["req_id"] = req_id
+            cast(Any, instructions)["channels_by_edge"] = channels_by_edge
             install_msg = {"cmd": "INSTALL_PATH", "path_id": path_id, "instructions": instructions}
             
             for node_name in route_names:
                 self._deliver_install_path(self.net.get_node(node_name), install_msg)
             
             self.path_requests[path_id] = [req_id]
+            self.path_request_history[path_id] = [req_id]
 
-            # CÁLCULO RUTAS DE RECUPERACIÓN (P4 Q-CAST)
+            # Install one edge-disjoint end-to-end backup path. Segment-level
+            # splicing is unsafe because each path has an immutable FIB context.
             self.recovery_paths_info[path_id] = []
             if not self.enable_recovery_paths:
                 continue
-            
-            # --- 1. CREACIÓN DEL GRAFO RESIDUAL ---
-            # Hacemos una copia de la memoria disponible justo después de instalar la ruta principal
-            memoria_residual = dict(self.node_remaining_capacity)
-            
-            h = len(route_objs)
-            for l in range(1, min(self.k_max, h)):
-                for idx in range(h - l):
-                    u = route_objs[idx]     
-                    v = route_objs[idx + l] 
-                    
-                    direct_result = self.eda.query(u, v, virtual_widths=memoria_residual)
-                    if direct_result and len(direct_result) > 0:
-                        direct_route = direct_result[0].route
-                        direct_names = [n.name for n in direct_route]
-                        segmento_original = [node.name for node in route_objs[idx:idx+l+1]]
-                        if direct_names != segmento_original:
-                            route_key = tuple(direct_names)
-                            if route_key not in recovery_routes_seen:
-                                recovery_routes_seen.add(route_key)
-                                recovery_candidates.append({
-                                    'segment_src': u.name,
-                                    'segment_dst': v.name,
-                                    'route': direct_names,
-                                    'metric': direct_result[0].metric,
-                                    'width': self._route_bottleneck_width(direct_route),
-                                    'hops': len(direct_names) - 1,
-                                })
 
-                    excluded_edge_names = {
-                        tuple(sorted((left_name, right_name)))
-                        for route_id, route_names in self.path_route_names.items()
-                        if route_names
-                        for left_name, right_name in zip(route_names[:-1], route_names[1:])
-                    }
-                    excluded_edge_names.update(
-                        tuple(sorted((left_node.name, right_node.name)))
-                        for left_node, right_node in zip(route_objs[idx:idx + l], route_objs[idx + 1:idx + l + 1])
+            excluded_edges = list(zip(route_objs[:-1], route_objs[1:]))
+            alt_result = self._query_route_without_edges(
+                route_objs[0],
+                route_objs[-1],
+                excluded_edges,
+                dict(self.node_remaining_capacity),
+            )
+            if alt_result:
+                alt_route = alt_result[0].route
+                alt_names = [node.name for node in alt_route]
+                if alt_names != route_names:
+                    self._install_recovery_candidate(
+                        owner_req_id=req_id,
+                        main_path_id=path_id,
+                        candidate={
+                            'segment_src': route_names[0],
+                            'segment_dst': route_names[-1],
+                            'route': alt_names,
+                            'metric': alt_result[0].metric,
+                            'width': self._route_bottleneck_width(alt_route),
+                            'hops': len(alt_names) - 1,
+                        },
                     )
-                    excluded_edges = [
-                        (self.net.get_node(left_name), self.net.get_node(right_name))
-                        for left_name, right_name in excluded_edge_names
-                        if self.net.get_node(left_name) is not None and self.net.get_node(right_name) is not None
-                    ]
-
-                    excluded_result = self._query_route_without_edges(
-                        u,
-                        v,
-                        excluded_edges,
-                        memoria_residual,
-                    )
-                    if excluded_result and len(excluded_result) > 0:
-                        excluded_route = excluded_result[0].route
-                        excluded_names = [n.name for n in excluded_route]
-                        segmento_original = [node.name for node in route_objs[idx:idx+l+1]]
-                        if excluded_names != segmento_original:
-                            route_key = tuple(excluded_names)
-                            if route_key not in recovery_routes_seen:
-                                recovery_routes_seen.add(route_key)
-                                recovery_candidates.append({
-                                    'segment_src': u.name,
-                                    'segment_dst': v.name,
-                                    'route': excluded_names,
-                                    'metric': excluded_result[0].metric,
-                                    'width': self._route_bottleneck_width(excluded_route),
-                                    'hops': len(excluded_names) - 1,
-                                })
-
-            recovery_candidates.sort(key=lambda item: (item['hops'], -item['metric'], item['route']))
-            selected_recovery_candidates: list[dict[str, Any]] = []
-            selected_routes: set[tuple[str, ...]] = set()
-            selected_segments: set[tuple[str, str]] = set()
-            for candidate in recovery_candidates:
-                route_key = tuple(candidate['route'])
-                segment_key = tuple(sorted((candidate['segment_src'], candidate['segment_dst'])))
-                if route_key in selected_routes or segment_key in selected_segments:
-                    continue
-                selected_routes.add(route_key)
-                selected_segments.add(segment_key)
-                selected_recovery_candidates.append(candidate)
-                if len(selected_recovery_candidates) >= 2:
-                    break
-
-            for candidate in selected_recovery_candidates:
-                self._install_recovery_candidate(
-                    owner_req_id=req_id,
-                    main_path_id=path_id,
-                    candidate=candidate,
-                )
-
-            if not self.recovery_paths_info[path_id] and len(route_objs) > 2:
-                sd_virtual_widths = {
-                    node: getattr(getattr(node, 'memory', None), 'capacity', 0)
-                    for node in nodes_list
-                }
-                for node in route_objs[1:-1]:
-                    sd_virtual_widths[node] = 0
-
-                alt_result = self.eda.query(route_objs[0], route_objs[-1], virtual_widths=sd_virtual_widths)
-                if alt_result and len(alt_result) > 0:
-                    alt_route = alt_result[0].route
-                    alt_names = [n.name for n in alt_route]
-                    if alt_names != route_names:
-                        self._install_recovery_candidate(
-                            owner_req_id=req_id,
-                            main_path_id=path_id,
-                            candidate={
-                                'segment_src': route_objs[0].name,
-                                'segment_dst': route_objs[-1].name,
-                                'route': alt_names,
-                                'metric': alt_result[0].metric,
-                                'width': self._route_bottleneck_width(alt_route),
-                            },
-                        )
 
         # Registro de solicitudes rechazadas o encoladas
         todavia_pendientes = []
@@ -464,11 +590,24 @@ class QCastController(RoutingController):
             required = w if (i == 0 or i == len(route_objs) - 1) else (2 * w)
             if self.node_remaining_capacity.get(node, 0) < required:
                 return False 
+        edge_keys = [
+            tuple(sorted((route_objs[i].name, route_objs[i + 1].name)))
+            for i in range(len(route_objs) - 1)
+        ]
+        if any(self.edge_remaining_capacity.get(edge_key, 0) < w for edge_key in edge_keys):
+            return False
 
         # 2. Consumo
         for i, node in enumerate(route_objs):
             consume = w if (i == 0 or i == len(route_objs) - 1) else (2 * w)
             self.node_remaining_capacity[node] -= consume
+        for edge_key in edge_keys:
+            self.edge_remaining_capacity[edge_key] -= w
+            if self.edge_remaining_capacity[edge_key] == 0 and self.net is not None:
+                left = self.net.get_node(edge_key[0])
+                right = self.net.get_node(edge_key[1])
+                self.eda.adj.get(left, {}).pop(right, None)
+                self.eda.adj.get(right, {}).pop(left, None)
             
         return True
 
@@ -498,22 +637,26 @@ class QCastController(RoutingController):
         self.next_path_id += 1
         self.path_w[rec_path_id] = rec_w
         self.path_route_names[rec_path_id] = alt_names
-        rec_req_id = f"{owner_req_id}__REC_{rec_path_id}"
-
+        self.path_route_history[rec_path_id] = list(alt_names)
+        channels_by_edge = self._allocate_route_channels(alt_nodes, rec_path_id, rec_w)
+        backup_req_id = f"{owner_req_id}__BACKUP_{rec_path_id}"
         rec_route_path = RoutingPathStatic(
             alt_names,
             req_id=rec_path_id,
             path_id=rec_path_id,
             m_v=self._build_fair_m_v(alt_names, w=rec_w),
+            swap=self.swap_policy,
         )
         rec_instructions = next(rec_route_path.compute_paths(net))
-        cast(Any, rec_instructions)["req_id"] = rec_req_id
+        cast(Any, rec_instructions)["req_id"] = backup_req_id
+        cast(Any, rec_instructions)["channels_by_edge"] = channels_by_edge
         rec_install_msg = {"cmd": "INSTALL_PATH", "path_id": rec_path_id, "instructions": rec_instructions}
 
         for node_name in alt_names:
             self._deliver_install_path(net.get_node(node_name), rec_install_msg)
 
-        self.path_requests[rec_path_id] = [owner_req_id, rec_req_id]
+        self.path_requests[rec_path_id] = [backup_req_id]
+        self.path_request_history[rec_path_id] = [backup_req_id]
         self.recovery_paths_info[main_path_id].append({
             'segment_src': candidate.get('segment_src'),
             'segment_dst': candidate.get('segment_dst'),
@@ -523,148 +666,68 @@ class QCastController(RoutingController):
             'w': rec_w,
             'rec_path_id': rec_path_id,
         })
+        self.recovery_path_history[rec_path_id] = {
+            'cycle': self.current_cycle,
+            'req_id': owner_req_id,
+            'main_path_id': main_path_id,
+            'main_route': list(self.path_route_names[main_path_id]),
+            'route': alt_names,
+            'metric': candidate.get('metric'),
+            'hops': candidate.get('hops', max(0, len(alt_names) - 1)),
+            'w': rec_w,
+        }
         return True
 
-    def report_success(self, req_id, time, fidelity: float | None = None):
-        """Report one E2E entanglement success.  Capped at 1 per req_id per cycle."""
-        try:
-            if req_id in self._success_reported_this_cycle:
-                return
-            self._success_reported_this_cycle.add(req_id)
-            self.successful_requests += 1
-            self.request_success[req_id] = True
-            self.request_success_count[req_id] = self.request_success_count.get(req_id, 0) + 1
-            if fidelity is not None:
-                self.request_fidelities.setdefault(req_id, []).append(float(fidelity))
-            self.success_history.append({
+    def report_success(
+        self,
+        req_id,
+        time,
+        fidelity: float | None = None,
+        *,
+        path_id: int | None = None,
+        path_role: str = "main",
+        epr_name: str | None = None,
+    ):
+        """Report an E2E delivery and track first satisfaction in its request-cycle."""
+        _ = time
+        if isinstance(req_id, str) and "__REC_" in req_id:
+            log.debug(f"Ignoring non-E2E recovery-path completion: req_id={req_id}")
+            return
+
+        normalized_fidelity = float(fidelity) if fidelity is not None else None
+        first_for_request_cycle = req_id not in self._success_reported_this_cycle
+        counted = first_for_request_cycle or self.count_multiple_e2e_per_cycle
+        if self.collect_validation_history:
+            self.e2e_completion_history.append({
                 "cycle": self.current_cycle,
                 "req_id": req_id,
-                "fidelity": fidelity if fidelity is not None else None,
+                "path_id": path_id,
+                "path_role": path_role,
+                "epr_name": epr_name,
+                "fidelity": normalized_fidelity,
+                "counted": counted,
+                "first_for_request_cycle": first_for_request_cycle,
             })
-        except Exception as e:
-            log.error(f"Error counting success: {e}")
 
-    def _handle_p4_swapping_recovery(self):
-        for req_id, info in self.request_route_info.items():
-            main_path_ids = self.main_paths_by_req.get(req_id, [])
-            if not main_path_ids:
-                continue
+        if not counted:
+            return
 
-            for path_id in main_path_ids:
-                route_names = self.path_route_names.get(path_id, info.get('route') or [])
-                if not route_names:
-                    continue
+        self._success_reported_this_cycle.add(req_id)
+        self.successful_requests += 1
+        self.request_success[req_id] = True
+        self.request_success_count[req_id] = self.request_success_count.get(req_id, 0) + 1
+        if normalized_fidelity is not None:
+            self.request_fidelities.setdefault(req_id, []).append(normalized_fidelity)
+        self.success_history.append({
+            "cycle": self.current_cycle,
+            "req_id": req_id,
+            "fidelity": normalized_fidelity,
+            "path_id": path_id,
+            "path_role": path_role,
+            "epr_name": epr_name,
+        })
 
-                recoveries = self.recovery_paths_info.get(path_id, [])
-                if not recoveries:
-                    continue
-
-                broken_segments = []
-                for i in range(len(route_names) - 1):
-                    u_name, v_name = route_names[i], route_names[i + 1]
-                    if not self._check_segment_entangled(u_name, v_name, path_id):
-                        broken_segments.append((u_name, v_name))
-
-                if not broken_segments:
-                    continue
-
-                repaired_segments = set()
-                for br_u, br_v in broken_segments:
-                    if (br_u, br_v) in repaired_segments:
-                        continue
-
-                    best_patch = self._select_best_recovery_patch(br_u, br_v, recoveries)
-
-                    if best_patch:
-                        repaired_segments.add((br_u, br_v))
-                        self.record_p4_recovery_applied()
-                        log.info(f"Q-CAST P4 REPARADO: Fallo en {br_u}-{br_v}. Usando desvío: {best_patch['route']}")
-                        self._apply_patch_swapping(path_id, best_patch)
-
-    def _select_best_recovery_patch(self, br_u, br_v, recoveries):
-        matching_patches = []
-        fallback_patches = []
-
-        for rec in recoveries:
-            rec_path_id = rec['rec_path_id']
-            patch_ready = all(
-                self._check_segment_entangled(rec['route'][j], rec['route'][j + 1], rec_path_id)
-                for j in range(len(rec['route']) - 1)
-            )
-            if not patch_ready:
-                continue
-
-            if self._patch_covers_segment(br_u, br_v, rec):
-                matching_patches.append(rec)
-            else:
-                fallback_patches.append(rec)
-
-        def patch_rank(patch):
-            return (
-                int(patch.get('hops', max(0, len(patch.get('route', [])) - 1))),
-                -float(patch.get('metric', 0.0)),
-                tuple(patch.get('route', [])),
-            )
-
-        if matching_patches:
-            return min(matching_patches, key=patch_rank)
-        if fallback_patches:
-            return min(fallback_patches, key=patch_rank)
-        return None
-
-    def _patch_covers_segment(self, u_name, v_name, patch):
-        if patch['segment_src'] == u_name and patch['segment_dst'] == v_name:
-            return True
-
-        route = patch.get('route', [])
-        if u_name not in route or v_name not in route:
-            return False
-        return route.index(u_name) < route.index(v_name)
-                    
-    def _check_segment_entangled(self, u_name, v_name, path_id):
-        if not self.net: return False
-        u = self.net.get_node(u_name)
-        canales = self.net.get_qchannels_between(u_name, v_name)
-        if not canales: return False
-        for q in getattr(u.memory, 'qubits', []):
-            if getattr(q, 'path_id', None) == path_id and getattr(q, 'qchannel', None) in canales:
-                if q.state.name in ["ENTANGLED0", "ENTANGLED1", "ENTANGLED2", "ENTANGLED", "ELIGIBLE"]:
-                    return True
-        return False
-        
-    def _apply_patch_swapping(self, main_path_id, patch):
-        if not self.net: return False
-        for step_node in patch['route']:
-            qn = self.net.get_node(step_node)
-            forwarder = getattr(qn, 'forwarder', None) 
-            if forwarder and hasattr(forwarder, 'attempt_swapping'):
-                for q in getattr(qn.memory, 'qubits', []):
-                    if getattr(q, 'path_id', None) == patch['rec_path_id']:
-                        q.path_id = main_path_id
-                        if q.state.name.startswith("ENTANGLED"):
-                            forwarder.attempt_swapping(q)
 class QCastMultiEntController(QCastController):
-    """Q-CAST variant that counts every E2E entanglement (no 1-success cap).
+    """Q-CAST variant that accepts every valid E2E delivery in a request-cycle."""
 
-    Both Q-CAST and this variant allow cross-channel swapping (any channel on
-    link A-B can pair with any channel on link B-C within the same request).
-    The only difference is in how successes are reported:
-    - QCastController caps at 1 success per req_id.
-    - QCastMultiEntController counts every successful E2E entanglement.
-    """
-
-    def report_success(self, req_id, time, fidelity: float | None = None):
-        """Report every E2E entanglement success without cap."""
-        try:
-            self.successful_requests += 1
-            self.request_success[req_id] = True
-            self.request_success_count[req_id] = self.request_success_count.get(req_id, 0) + 1
-            if fidelity is not None:
-                self.request_fidelities.setdefault(req_id, []).append(float(fidelity))
-            self.success_history.append({
-                "cycle": self.current_cycle,
-                "req_id": req_id,
-                "fidelity": fidelity if fidelity is not None else None,
-            })
-        except Exception as e:
-            log.error(f"Error counting success: {e}")
+    count_multiple_e2e_per_cycle = True

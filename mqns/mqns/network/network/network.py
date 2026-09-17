@@ -409,12 +409,15 @@ class QuantumNetwork:
                     ))
             else:
                 prob = float(prob_val)
+            if not math.isfinite(prob) or not 0.0 <= prob <= 1.0:
+                source = "explicit JSON value" if prob_val is not None else "physical model"
+                raise ValueError(
+                    f"Invalid link probability {prob!r} for {u_name}-{v_name} "
+                    f"from {source}; expected a finite value in [0, 1]"
+                )
 
-            if prob < 0.5:
-                modeled_prob = cast(float, calc_arch._compute_success_prob(
-                    length=length, alpha=alpha, eta_s=eta_s, eta_d=eta_d
-                ))
-                prob = max(prob, modeled_prob)
+            # Respect caller-defined channel probability exactly when provided.
+            # If `prob` is omitted, we use the physical model above.
 
             if fidelity is None:
                 fidelity = math.exp(-alpha * length)
@@ -443,6 +446,9 @@ class QuantumNetwork:
                     link_arch.eta_s = eta_s
                     link_arch.eta_d = eta_d
                     link_arch.success_prob = prob
+                    link_arch._json_success_prob = (
+                        float(prob_val) if prob_val is not None else None
+                    )
                     link_arch.p_s = prob
 
                     qc: Any = QuantumChannel(
@@ -599,10 +605,9 @@ class QuantumNetwork:
 
 
 def dibujar_escenario(net) -> None:
-    """Dibuja la topología de la red cuántica con nodos, enlaces, probabilidades y fidelidades.
+    """Dibuja la topología de la red cuántica con nodos, enlaces, longitudes y fidelidades.
     """
     G = nx.Graph()
-    
     nodos_lista = net.nodes if isinstance(net.nodes, list) else list(net.nodes.values())
 
     labels_nodos = {}
@@ -610,45 +615,57 @@ def dibujar_escenario(net) -> None:
         cap = getattr(node.memory, 'capacity', 10)
         G.add_node(node.name, capacity=cap)
         labels_nodos[node.name] = f"{node.name}\n(W:{cap})"
-    
+
     channels = getattr(net, 'qchannels', getattr(net, '_qchannels', []))
     for qc in channels:
         if hasattr(qc, 'node_list'):
             u_name, v_name = qc.node_list[0].name, qc.node_list[1].name
         else:
             u_name, v_name = qc.node1.name, qc.node2.name
-            
-        prob = getattr(qc, 'success_prob', 1.0)
-        G.add_edge(u_name, v_name, weight=prob)
 
+        G.add_edge(u_name, v_name, weight=float(getattr(qc, 'length', 0.0)))
 
-    pos = nx.spring_layout(G, seed=42, k=0.3)
-    
-    plt.figure(figsize=(12, 8))
-    
-    nx.draw_networkx_nodes(G, pos, node_size=3500, node_color='lightblue', edgecolors='black')
-    
-    nx.draw_networkx_labels(G, pos, labels=labels_nodos, font_size=14, font_weight='bold')
+    pos = nx.kamada_kawai_layout(G, weight=None)
+    for node_name, coords in pos.items():
+        pos[node_name] = (coords[0] * 1.35, coords[1] * 1.2)
 
-    nx.draw_networkx_edges(G, pos, width=2, alpha=0.5)
-    
+    fig, ax = plt.subplots(figsize=(14, 9))
+
+    nx.draw_networkx_nodes(G, pos, node_size=3500, node_color='lightblue', edgecolors='black', ax=ax)
+    nx.draw_networkx_labels(G, pos, labels=labels_nodos, font_size=20, font_weight='bold', ax=ax)
+    nx.draw_networkx_edges(G, pos, width=2, alpha=0.5, ax=ax)
+
     labels_enlaces = {}
     for qc in channels:
         if hasattr(qc, 'node_list'):
             u_name, v_name = qc.node_list[0].name, qc.node_list[1].name
         else:
             u_name, v_name = qc.node1.name, qc.node2.name
-        prob = getattr(qc, 'success_prob', 1.0)
+        length = float(getattr(qc, 'length', 0.0))
         route_nodes = list(qc.node_list) if hasattr(qc, 'node_list') else [qc.node1, qc.node2]
-        
-        est_fid = estimar_fidelidad_observada_de_ruta(net, route_nodes) 
-        labels_enlaces[(u_name, v_name)] = f"P:{prob:.2f}\nF_est:{est_fid:.2f}"
-        
-    nx.draw_networkx_edge_labels(G, pos, edge_labels=labels_enlaces, font_color='red', font_size=12)
+        est_fid = estimar_fidelidad_observada_de_ruta(net, route_nodes)
+        labels_enlaces[(u_name, v_name)] = f"L:{length:.2f}\nF_est:{est_fid:.2f}"
 
-    plt.title("Topología de Red: Capacidad y Fidelidad estimada en nodos/enlaces")
-    plt.axis('off')
-    plt.tight_layout()
+    nx.draw_networkx_edge_labels(
+        G,
+        pos,
+        edge_labels=labels_enlaces,
+        font_color='red',
+        font_size=18,
+        rotate=False,
+        bbox={
+            'facecolor': 'white',
+            'edgecolor': 'none',
+            'alpha': 0.75,
+            'pad': 0.15,
+        },
+        ax=ax,
+    )
+
+    ax.set_title("Topología de Red: Capacidad, longitud y fidelidad estimada", fontsize=18)
+    ax.margins(0.12)
+    ax.axis('off')
+    fig.tight_layout()
     plt.show()
 
 

@@ -9,9 +9,9 @@ class PathInstructions(TypedDict):
     Instructions from the controller to forwarders regarding a routing path.
     """
 
-    req_id: int
+    req_id: int | str
     """
-    Request identifier -- nonnegative integer to uniquely identify the src-dst pair within the network.
+    Request identifier used to uniquely identify the source-destination pair.
     """
 
     route: list[str]

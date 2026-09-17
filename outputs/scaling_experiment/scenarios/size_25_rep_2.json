@@ -1,0 +1,551 @@
+{
+  "nodos": [
+    {
+      "id": "n1",
+      "capacity": 19,
+      "x": -0.2545967449960269,
+      "y": -0.14223402654128425
+    },
+    {
+      "id": "n2",
+      "capacity": 17,
+      "x": 5.112106728990788,
+      "y": 0.009599650905222079
+    },
+    {
+      "id": "n3",
+      "capacity": 22,
+      "x": 10.096318761145376,
+      "y": 0.1045309657626029
+    },
+    {
+      "id": "n4",
+      "capacity": 16,
+      "x": 15.561174796861112,
+      "y": -0.6203543085135403
+    },
+    {
+      "id": "n5",
+      "capacity": 23,
+      "x": 20.363712906029843,
+      "y": 0.4805508966521228
+    },
+    {
+      "id": "n6",
+      "capacity": 23,
+      "x": 0.3182401050407484,
+      "y": 4.864888410779747
+    },
+    {
+      "id": "n7",
+      "capacity": 23,
+      "x": 5.664430661982924,
+      "y": 4.296423704456181
+    },
+    {
+      "id": "n8",
+      "capacity": 24,
+      "x": 10.454409953190453,
+      "y": 5.153072937892985
+    },
+    {
+      "id": "n9",
+      "capacity": 23,
+      "x": 14.3116893473954,
+      "y": 4.748599117956948
+    },
+    {
+      "id": "n10",
+      "capacity": 22,
+      "x": 19.817408967108367,
+      "y": 4.51406799171332
+    },
+    {
+      "id": "n11",
+      "capacity": 18,
+      "x": 0.21390127051961483,
+      "y": 9.908861338996433
+    },
+    {
+      "id": "n12",
+      "capacity": 18,
+      "x": 5.3237072518728645,
+      "y": 9.80715562480594
+    },
+    {
+      "id": "n13",
+      "capacity": 17,
+      "x": 9.331270998803912,
+      "y": 10.323549856340215
+    },
+    {
+      "id": "n14",
+      "capacity": 24,
+      "x": 15.349567948202086,
+      "y": 9.37321720355874
+    },
+    {
+      "id": "n15",
+      "capacity": 25,
+      "x": 19.948193636281513,
+      "y": 9.932809063148479
+    },
+    {
+      "id": "n16",
+      "capacity": 18,
+      "x": 0.6223139709312449,
+      "y": 15.146610955892454
+    },
+    {
+      "id": "n17",
+      "capacity": 18,
+      "x": 4.711163468719062,
+      "y": 15.570949080381505
+    },
+    {
+      "id": "n18",
+      "capacity": 18,
+      "x": 9.73548205198238,
+      "y": 15.339557156807446
+    },
+    {
+      "id": "n19",
+      "capacity": 25,
+      "x": 14.532937265132034,
+      "y": 14.57267760743043
+    },
+    {
+      "id": "n20",
+      "capacity": 22,
+      "x": 19.4686010904983,
+      "y": 15.48124255175001
+    },
+    {
+      "id": "n21",
+      "capacity": 20,
+      "x": -0.4624373789166691,
+      "y": 19.6473301554938
+    },
+    {
+      "id": "n22",
+      "capacity": 18,
+      "x": 4.553907347183802,
+      "y": 20.454291451649755
+    },
+    {
+      "id": "n23",
+      "capacity": 20,
+      "x": 10.002968068499865,
+      "y": 19.56251562612871
+    },
+    {
+      "id": "n24",
+      "capacity": 23,
+      "x": 15.608442571207416,
+      "y": 20.472811340114664
+    },
+    {
+      "id": "n25",
+      "capacity": 19,
+      "x": 19.715924389725203,
+      "y": 19.749055492209266
+    }
+  ],
+  "enlaces": [
+    {
+      "u": "n1",
+      "v": "n2",
+      "length": 5.3688508680451426,
+      "prob": 0.8739656560002819,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n1",
+      "v": "n6",
+      "length": 5.039783443669356,
+      "prob": 0.8794743933423308,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n10",
+      "v": "n15",
+      "length": 5.420319126116929,
+      "prob": 0.8731071800623857,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n11",
+      "v": "n12",
+      "length": 5.110818057745007,
+      "prob": 0.8782823105956108,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n11",
+      "v": "n16",
+      "length": 5.253648444952511,
+      "prob": 0.8758902601132197,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n12",
+      "v": "n13",
+      "length": 4.0406967453742295,
+      "prob": 0.8964132137387288,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n12",
+      "v": "n17",
+      "length": 5.7962509335618035,
+      "prob": 0.8668622653638349,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n13",
+      "v": "n14",
+      "length": 6.092867167604923,
+      "prob": 0.8619664682901625,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n13",
+      "v": "n18",
+      "length": 5.0322674624717845,
+      "prob": 0.8796006190239014,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n14",
+      "v": "n15",
+      "length": 4.6325480319563965,
+      "prob": 0.8863397962619223,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n14",
+      "v": "n19",
+      "length": 5.263199992776355,
+      "prob": 0.875730528262076,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n15",
+      "v": "n20",
+      "length": 5.569122299555449,
+      "prob": 0.8706299257622221,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n16",
+      "v": "n17",
+      "length": 4.110809294950882,
+      "prob": 0.895213932581937,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n16",
+      "v": "n21",
+      "length": 4.629595965595385,
+      "prob": 0.8863897590058908,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n17",
+      "v": "n18",
+      "length": 5.029644067766667,
+      "prob": 0.8796446813801808,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n17",
+      "v": "n21",
+      "length": 6.586579415765883,
+      "prob": 0.8538787414932519,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n17",
+      "v": "n22",
+      "length": 4.885873739955232,
+      "prob": 0.8820628159928102,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n18",
+      "v": "n19",
+      "length": 4.85836194261291,
+      "prob": 0.8825263058471531,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n18",
+      "v": "n23",
+      "length": 4.2314213927053625,
+      "prob": 0.8931546052642135,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n19",
+      "v": "n20",
+      "length": 5.018592198522969,
+      "prob": 0.8798303320501633,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n19",
+      "v": "n24",
+      "length": 5.997356895079255,
+      "prob": 0.8635398866287387,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n2",
+      "v": "n3",
+      "length": 4.985116000256676,
+      "prob": 0.8803929084998703,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n2",
+      "v": "n7",
+      "length": 4.3222589224916845,
+      "prob": 0.891606776021176,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n20",
+      "v": "n24",
+      "length": 6.310038253689923,
+      "prob": 0.8583994946234321,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n20",
+      "v": "n25",
+      "length": 4.27497322904974,
+      "prob": 0.8924121672118653,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n21",
+      "v": "n22",
+      "length": 5.080836638248637,
+      "prob": 0.8787852530784247,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n22",
+      "v": "n23",
+      "length": 5.521551128765654,
+      "prob": 0.8714211186364338,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n23",
+      "v": "n24",
+      "length": 5.678906821511132,
+      "prob": 0.8688067553634466,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n24",
+      "v": "n25",
+      "length": 4.17075885383361,
+      "prob": 0.8941897628067778,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n3",
+      "v": "n4",
+      "length": 5.512722571648341,
+      "prob": 0.8715680322681292,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n3",
+      "v": "n7",
+      "length": 6.100294817155128,
+      "prob": 0.8618442267943319,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n3",
+      "v": "n8",
+      "length": 5.06122567627471,
+      "prob": 0.8791143854885793,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n3",
+      "v": "n9",
+      "length": 6.271899088924157,
+      "prob": 0.8590248493749267,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n4",
+      "v": "n5",
+      "length": 4.92710508927695,
+      "prob": 0.8813686492682864,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n4",
+      "v": "n9",
+      "length": 5.512429118277688,
+      "prob": 0.871572915971616,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n5",
+      "v": "n10",
+      "length": 4.070344966932415,
+      "prob": 0.8959058824488076,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n6",
+      "v": "n11",
+      "length": 5.0450519811962335,
+      "prob": 0.879385922714666,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n6",
+      "v": "n7",
+      "length": 5.376328263180479,
+      "prob": 0.8738408827837831,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n7",
+      "v": "n12",
+      "length": 5.521255177960784,
+      "prob": 0.8714260430725702,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n7",
+      "v": "n8",
+      "length": 4.865978783281411,
+      "prob": 0.8823979609443688,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n8",
+      "v": "n13",
+      "length": 5.291055913053277,
+      "prob": 0.8752648562007674,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n8",
+      "v": "n14",
+      "length": 6.46314083237847,
+      "prob": 0.8558937028523163,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n8",
+      "v": "n9",
+      "length": 3.8784279542066704,
+      "prob": 0.8991950010235104,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n9",
+      "v": "n10",
+      "length": 5.510712601839202,
+      "prob": 0.8716014830934226,
+      "channels": 5,
+      "profile": "spatial_local"
+    },
+    {
+      "u": "n9",
+      "v": "n14",
+      "length": 4.739650243181202,
+      "prob": 0.8845290301443828,
+      "channels": 5,
+      "profile": "spatial_local"
+    }
+  ],
+  "solicitudes": [
+    {
+      "src": "n6",
+      "dst": "n5"
+    },
+    {
+      "src": "n20",
+      "dst": "n16"
+    },
+    {
+      "src": "n22",
+      "dst": "n4"
+    },
+    {
+      "src": "n15",
+      "dst": "n21"
+    },
+    {
+      "src": "n24",
+      "dst": "n11"
+    }
+  ],
+  "scaling_profile": {
+    "model": "constant_density_spatial",
+    "layout": "jittered_grid",
+    "rows": 5,
+    "columns": 5,
+    "node_spacing": 5.0,
+    "position_jitter_fraction": 0.15,
+    "target_average_node_degree": 3.6,
+    "pair_distance_quantiles": [
+      0.8,
+      1.0
+    ]
+  }
+}

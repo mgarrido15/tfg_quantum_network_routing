@@ -145,9 +145,19 @@ class LinkArchBase(ABC, LinkArch):
     def __init__(self, name: str):
         self.name = name
         self.success_prob = 0.0
+        self._json_success_prob: float | None = None  # Tracks if success_prob was set from JSON
         self.attempt_interval = 0.0
         self.d_notify_a = 0.0
         self.d_notify_b = 0.0
+    
+    def __deepcopy__(self, memo):
+        """Custom deepcopy to preserve _json_success_prob"""
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for k, v in self.__dict__.items():
+            setattr(result, k, copy.deepcopy(v, memo))
+        return result
 
     @override
     def set(self, **kwargs: Unpack[LinkArchParameters]) -> None:
@@ -156,12 +166,14 @@ class LinkArchBase(ABC, LinkArch):
         for _ in range(16):
             assert ch.delay.calculate() == tau_l, "QuantumChannel.delay must be constant"
 
-        self.success_prob = self._compute_success_prob(
-            length=ch.length,
-            alpha=ch.alpha,
-            eta_s=kwargs["eta_s"],
-            eta_d=kwargs["eta_d"],
-        )
+        # Preserve explicit JSON probabilities, including the valid boundary value 0.0.
+        if self._json_success_prob is None:
+            self.success_prob = self._compute_success_prob(
+                length=ch.length,
+                alpha=ch.alpha,
+                eta_s=kwargs["eta_s"],
+                eta_d=kwargs["eta_d"],
+            )
 
         self.attempt_interval, self.d_notify_a, self.d_notify_b = self._compute_delays(
             reset_time=kwargs["reset_time"],

@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-17T23:58:12.380501+02:00",
+  "git_revision": "12f95df46cf0b407be1e7e030d4fd5cda86d7c04",
+  "git_dirty": true,
+  "git_changed_files": [
+    " M METRICAS.md",
+    " M README.md",
+    " M escenario_basico.json",
+    " M mqns/mqns/entity/memory/memory.py",
+    " M mqns/mqns/entity/qchannel/link_arch_sim.py",
+    " M mqns/mqns/network/fw/forwarder.py",
+    " M mqns/mqns/network/network/network.py",
+    " M mqns/mqns/network/network/reporting.py",
+    " M mqns/mqns/network/network/timing.py",
+    " M mqns/mqns/network/protocol/link_layer.py",
+    " M mqns/mqns/network/qcast/controller.py",
+    " M mqns/mqns/network/qcast/extended_dijkstra.py",
+    " M mqns/mqns/network/qcast/forwarder.py",
+    " M mqns/mqns/network/route/capacity_assignment.py",
+    " M outputs/20260817_234250/01_throughput_global.png",
+    " M outputs/20260817_234250/04_sd_pairs_with_success.png",
+    " M outputs/20260819_193955/04_sd_pairs_with_success.png",
+    " D outputs/20260819_193955/05_link_metadata.json",
+    " D outputs/20260819_193955/05_pair_success_probability_barcode.png",
+    " D outputs/20260829_090547/04b_admitted_pair_success_rate.png",
+    " D outputs/20260829_090547/05_pair_success_probability_barcode.png",
+    " M scripts/comparison_algorithms_badlinks_original.py",
+    " M scripts/comparison_algorithms_convergence.py",
+    " M scripts/scaling_experiments.py",
+    " M scripts/simulation_utils.py",
+    "?? Archivos_GuiaProyecto/",
+    "?? escenario_casi_ideal_final.json",
+    "?? escenario_grande_final.json",
+    "?? mqns/__pycache__/",
+    "?? mqns/mqns/entity/__pycache__/",
+    "?? mqns/mqns/entity/cchannel/__pycache__/",
+    "?? mqns/mqns/entity/memory/__pycache__/",
+    "?? mqns/mqns/entity/node/__pycache__/",
+    "?? mqns/mqns/entity/operator/__pycache__/",
+    "?? mqns/mqns/entity/qchannel/__pycache__/",
+    "?? mqns/mqns/models/__pycache__/",
+    "?? mqns/mqns/models/core/__pycache__/",
+    "?? mqns/mqns/models/delay/__pycache__/",
+    "?? mqns/mqns/models/epr/__pycache__/",
+    "?? mqns/mqns/models/error/__pycache__/",
+    "?? mqns/mqns/models/qubit/__pycache__/",
+    "?? mqns/mqns/network/__pycache__/",
+    "?? mqns/mqns/network/fw/__pycache__/",
+    "?? mqns/mqns/network/network/__pycache__/",
+    "?? mqns/mqns/network/protocol/__pycache__/",
+    "?? mqns/mqns/network/qcast/__pycache__/",
+    "?? mqns/mqns/network/route/__pycache__/",
+    "?? mqns/mqns/network/topology/__pycache__/",
+    "?? mqns/mqns/simulator/__pycache__/",
+    "?? mqns/mqns/utils/__pycache__/",
+    "?? outputs/20260817_234250/01_throughput_global_original.png",
+    "?? outputs/final_scenarios_20260917/",
+    "?? outputs/final_scenarios_v2/",
+    "?? outputs/final_scenarios_v4/",
+    "?? outputs/final_scenarios_v5/",
+    "?? scripts/__pycache__/",
+    "?? scripts/build_final_scenarios.py",
+    "?? scripts/channel_ablation.py",
+    "?? scripts/regenerate_routing_coverage_plots.py",
+    "?? scripts/run_final_scenarios.py",
+    "?? tests/"
+  ],
+  "python_version": "3.12.10",
+  "python_executable": "C:\\Users\\rcmga\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+  "platform": "win32",
+  "command": [
+    "C:\\Users\\rcmga\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+    "C:\\UNI\\TFG_Practica_MQNS\\scripts\\comparison_algorithms_badlinks_original.py",
+    "--scenario",
+    "C:\\UNI\\TFG_Practica_MQNS\\escenario_casi_ideal_final.json",
+    "--scenario-mode",
+    "as-is",
+    "--sim-time",
+    "1000.0",
+    "--simulation-seed",
+    "10007",
+    "--priority-seed",
+    "20011",
+    "--log-level",
+    "ERROR",
+    "--output-dir",
+    "outputs\\final_scenarios_v5\\ideal"
+  ],
+  "working_directory": "C:\\UNI\\TFG_Practica_MQNS",
+  "artifacts": [
+    {
+      "name": "00_topology_diagram.png",
+      "size_bytes": 455262,
+      "sha256": "3f1195376eefa2c993745e618548c9b270efacc8db92d1b91d15eb453558cd34"
+    },
+    {
+      "name": "01_throughput_global.png",
+      "size_bytes": 36522,
+      "sha256": "ecf54e177bd8709e9890bf66dd143388c5cc18a2c15a2eddb9ccb825b7c949ab"
+    },
+    {
+      "name": "03_average_fidelity.png",
+      "size_bytes": 36293,
+      "sha256": "46a435a1e262ddf2010f082ff6d4796f1370f2efcfe2ced473b0d8d9a59db494"
+    },
+    {
+      "name": "04_sd_pairs_with_success.png",
+      "size_bytes": 57479,
+      "sha256": "b019dd69a0d61dd49dbe74305b56149076eca0fc09947f75df0fc746e50bccc3"
+    },
+    {
+      "name": "05_link_metadata.json",
+      "size_bytes": 124426,
+      "sha256": "b1837ea37041ce93b434e7a62d2d2f2b6e69522dd97f873567e05f7e01369cee"
+    },
+    {
+      "name": "06_route_cycles_by_request.png",
+      "size_bytes": 190449,
+      "sha256": "3e17c3bff0513a1883f0a21bc9108e4ca531938577eb062c48f15e37b5c5e480"
+    },
+    {
+      "name": "analysis_results.json",
+      "size_bytes": 109433139,
+      "sha256": "f8aca29bcb9a18795116f788dd955f378870aa2a2079e3ce9269cb4fa47f8507"
+    },
+    {
+      "name": "rutas_asignadas.json",
+      "size_bytes": 88774482,
+      "sha256": "0cf96984ccb5dc8b700bfaf30a64f82c8be5b5fbea42277daa1de2bb7c631aa3"
+    },
+    {
+      "name": "scenario_effective.json",
+      "size_bytes": 22240,
+      "sha256": "f0542ea56f46ffa3dca32aa38a137108371b8205d9063e5894f5dcc5f789a008"
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 from typing import Any, Callable
 from collections import deque
+from mqns.utils import log
 
 
 def initialize_virtual_node_capacity(controller: Any, all_nodes: list) -> None:
@@ -8,7 +9,7 @@ def initialize_virtual_node_capacity(controller: Any, all_nodes: list) -> None:
     }
 
 
-def _route_available_width(controller: Any, route_nodes: list) -> int:
+def _route_available_width(net: Any, controller: Any, route_nodes: list) -> int:
     """Compute the maximum width that can be reserved along a route.
 
     Endpoint nodes can use one qubit per path; intermediate nodes must reserve
@@ -22,7 +23,17 @@ def _route_available_width(controller: Any, route_nodes: list) -> int:
             widths.append(cap)
         else:
             widths.append(cap // 2)
-    return min(widths) if widths else 0
+    memory_width = min(widths) if widths else 0
+    if memory_width <= 0 or len(route_nodes) < 2:
+        return 0
+    channel_width = min(
+        controller._edge_remaining_capacity.get(
+            tuple(sorted((route_nodes[i].name, route_nodes[i + 1].name))),
+            0,
+        )
+        for i in range(len(route_nodes) - 1)
+    )
+    return min(memory_width, channel_width)
 
 
 def assign_dijkstra_routes_with_capacity(
@@ -33,42 +44,23 @@ def assign_dijkstra_routes_with_capacity(
     enforce_capacity: bool = True,
     reserve_all_route_capacity: bool = False,
 ) -> None:
-    import sys
-    import os
-    debug_file = open(os.path.expanduser("~/dijkstra_debug.log"), "w")
-
     all_nodes = list(getattr(net, "nodes", getattr(net, "all_nodes", [])))
     controller._node_remaining_capacity = {
         n: getattr(getattr(n, "memory", None), "capacity", 0) for n in all_nodes
     }
+    controller._edge_remaining_capacity = {}
+    for channel in getattr(net, "qchannels", []):
+        if not hasattr(channel, "node_list") or len(channel.node_list) != 2:
+            continue
+        edge_key = tuple(sorted((channel.node_list[0].name, channel.node_list[1].name)))
+        controller._edge_remaining_capacity[edge_key] = (
+            controller._edge_remaining_capacity.get(edge_key, 0) + 1
+        )
 
     def _commit_selection(req, route_nodes, selected_width: int, prob: float, fidelity: float):
         req_id = req["req_id"]
         route_names = [n.name for n in route_nodes]
         hops = len(route_names) - 1
-
-        route_key = tuple(route_names)
-        owner_req_id = getattr(controller, 'route_owner_req', {}).get(route_key)
-        if owner_req_id is not None:
-            owner_info = controller.request_route_info.get(owner_req_id, {
-                "route": route_names,
-                "hops": hops,
-                "route_success_prob": prob,
-                "route_fidelity": fidelity,
-                "width": selected_width,
-                "w_asignado": selected_width,
-            })
-            controller.request_route_info[req_id] = dict(owner_info)
-            if hasattr(controller, 'register_route_alias'):
-                controller.register_route_alias(owner_req_id, req_id)
-            controller.request_success.setdefault(req_id, False)
-            controller.request_success_count.setdefault(req_id, 0)
-            debug_file.write(f"  Route duplicated; alias req {req_id} -> owner {owner_req_id}\n")
-            debug_file.flush()
-            return
-
-        if hasattr(controller, 'route_owner_req'):
-            controller.route_owner_req[route_key] = req_id
 
         controller.request_route_info[req_id] = {
             "route": route_names,
@@ -94,6 +86,13 @@ def assign_dijkstra_routes_with_capacity(
                         0,
                         controller._node_remaining_capacity.get(n, 0) - consume,
                     )
+            edge_width = selected_width if reserve_all_route_capacity else 1
+            for left, right in zip(route_nodes[:-1], route_nodes[1:]):
+                edge_key = tuple(sorted((left.name, right.name)))
+                controller._edge_remaining_capacity[edge_key] = max(
+                    0,
+                    controller._edge_remaining_capacity.get(edge_key, 0) - edge_width,
+                )
 
         controller.request_success.setdefault(req_id, False)
         controller.request_success_count.setdefault(req_id, 0)
@@ -105,11 +104,12 @@ def assign_dijkstra_routes_with_capacity(
 
         try:
             query_result = net.query_route(src_node, dst_node)
-            debug_file.write(f"REQ {req_id}: query_route({src_node.name}, {dst_node.name}) -> {len(query_result) if query_result else 0} results\n")
-            debug_file.flush()
+            log.debug(
+                f"REQ {req_id}: query_route({src_node.name}, {dst_node.name}) -> "
+                f"{len(query_result) if query_result else 0} results"
+            )
             if not query_result:
-                debug_file.write(f"  No route found, skipping\n")
-                debug_file.flush()
+                log.debug("No route found, skipping")
                 continue
 
             candidates = query_result if isinstance(query_result, list) else [query_result]
@@ -129,7 +129,7 @@ def assign_dijkstra_routes_with_capacity(
                         if not hasattr(cand, "route"):
                             continue
                         cand_route = cand.route
-                        width = _route_available_width(controller, cand_route)
+                        width = _route_available_width(net, controller, cand_route)
                         if width <= 0:
                             continue
                         cand_prob, _cand_fid = route_quality_fn(net, cand_route)
@@ -142,7 +142,7 @@ def assign_dijkstra_routes_with_capacity(
                     for cand in candidates:
                         if not hasattr(cand, "route"):
                             continue
-                        if _route_available_width(controller, cand.route) >= 1:
+                        if _route_available_width(net, controller, cand.route) >= 1:
                             selected = cand
                             break
 
@@ -205,7 +205,7 @@ def assign_dijkstra_routes_with_capacity(
 
                 alt_path = _bfs_find_path(src_node, dst_node, excluded)
                 if alt_path:
-                    if _route_available_width(controller, alt_path) < 1:
+                    if _route_available_width(net, controller, alt_path) < 1:
                         alt_path = None
 
                 if alt_path:
@@ -217,27 +217,25 @@ def assign_dijkstra_routes_with_capacity(
 
                     selected = _Simple(alt_path)
                     if reserve_all_route_capacity:
-                        selected_width = _route_available_width(controller, selected.route)
+                        selected_width = _route_available_width(net, controller, selected.route)
 
             if selected is None:
-                debug_file.write(f"  No candidate selected, skipping\n")
-                debug_file.flush()
+                log.debug("No candidate selected, skipping")
                 continue
 
             route_nodes = selected.route
             route_names = [n.name for n in route_nodes]
             hops = len(route_names) - 1
             prob, fidelity = route_quality_fn(net, route_nodes)
-            debug_file.write(f"  Selected route: {route_names} ({hops} hops, prob={prob}, fidelity={fidelity})\n")
-            debug_file.flush()
+            log.debug(
+                f"Selected route: {route_names} "
+                f"({hops} hops, prob={prob}, fidelity={fidelity})"
+            )
         except Exception as e:
-            debug_file.write(f"  Exception: {e}\n")
-            debug_file.flush()
+            log.error(f"Failed to assign route for {req_id}: {e}")
             continue
 
         _commit_selection(req, route_nodes, selected_width, prob, fidelity)
-    
-    debug_file.close()
 
 
 def assign_dijkstra_routes_with_capacity_reserve_all(
@@ -256,5 +254,3 @@ def assign_dijkstra_routes_with_capacity_reserve_all(
         enforce_capacity=enforce_capacity,
         reserve_all_route_capacity=True,
     )
-
-

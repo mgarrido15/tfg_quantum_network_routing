@@ -366,7 +366,7 @@ class QuantumMemory(Entity):
         if set_fidelity and isinstance(data, Entanglement) and not data.read:
             data.apply_store_decays(self.simulator.tc, update_fidelity_time=False)
 
-        if remove in (True, data):
+        if remove in (True, data) and data is not None:
             qubit.set_event(QuantumMemory, None)  # cancel scheduled decoherence event
             self._usage -= 1
             self._storage[qubit.addr] = (qubit, None)

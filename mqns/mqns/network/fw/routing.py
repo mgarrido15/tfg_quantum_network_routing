@@ -41,7 +41,7 @@ def _compute_mv(net: QuantumNetwork, route: list[str], qubit_allocation: QubitAl
 
 
 class RoutingPathInitArgs(TypedDict, total=False):
-    req_id: int
+    req_id: int | str
     """Request identifier, defaults to auto-assignment."""
     path_id: int
     """Path identifier for the first path, defaults to auto-assignment."""

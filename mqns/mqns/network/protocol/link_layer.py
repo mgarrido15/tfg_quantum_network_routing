@@ -19,7 +19,6 @@ import uuid
 from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass
-import traceback
 from typing import Literal, TypedDict, cast, override
 
 from mqns.entity.cchannel import ClassicChannel, ClassicPacket, RecvClassicPacket
@@ -34,7 +33,7 @@ from mqns.network.protocol.event import (
     QubitEntangledEvent,
     QubitReleasedEvent,
 )
-from mqns.utils import json_encodable, log, random, rng
+from mqns.utils import json_encodable, log, rng
 
 
 class ReserveMsg(TypedDict):
@@ -69,6 +68,8 @@ class LinkLayerCounters:
                 r.n_etg += ll.cnt.n_etg
                 r.n_attempts += ll.cnt.n_attempts
                 r.n_decoh += ll.cnt.n_decoh
+                r.n_stale_control += ll.cnt.n_stale_control
+                r.n_stale_entanglement += ll.cnt.n_stale_entanglement
         return r
 
     def __init__(self):
@@ -78,6 +79,10 @@ class LinkLayerCounters:
         """how many attempts made for successful entanglements"""
         self.n_decoh = 0
         """how many qubits decohered"""
+        self.n_stale_control = 0
+        """how many stale reservation messages were discarded"""
+        self.n_stale_entanglement = 0
+        """how many stale entanglement notifications were discarded"""
 
     def increment_n_etg(self, attempts: int) -> None:
         self.n_etg += 1
@@ -89,7 +94,12 @@ class LinkLayerCounters:
         return self.n_decoh / self.n_etg if self.n_etg > 0 else 0
 
     def __repr__(self) -> str:
-        return f"etg={self.n_etg} attempts={self.n_attempts} decoh={self.n_decoh} decoh_ratio={self.decoh_ratio}"
+        return (
+            f"etg={self.n_etg} attempts={self.n_attempts} decoh={self.n_decoh} "
+            f"stale_control={self.n_stale_control} "
+            f"stale_entanglement={self.n_stale_entanglement} "
+            f"decoh_ratio={self.decoh_ratio}"
+        )
 
 
 class LinkLayer(Application[QNode]):
@@ -189,9 +199,32 @@ class LinkLayer(Application[QNode]):
 
         Upon entering INTERNAL phase: do nothing.
         """
+        if event.phase == TimingPhase.P1:
+            self.reset_cycle_state()
+
         if event.phase in (TimingPhase.EXTERNAL, TimingPhase.P3):
             for (qchannel, path_id), (neighbor, _) in self.active_channels.items():
                 self.run_active_channel(qchannel, path_id, neighbor)
+
+    def reset_cycle_state(self) -> None:
+        """Invalidate incomplete link reservations from the preceding cycle."""
+        for key, (_, _, qubit) in self.pending_init_reservation.items():
+            if qubit.active == key:
+                qubit.reset_state()
+        self.pending_init_reservation.clear()
+
+        for req in self.fifo_reservation_req:
+            for qubit, _ in self.memory.find(lambda q, _: q.active == req.key):
+                qubit.reset_state()
+        self.fifo_reservation_req.clear()
+
+    def _path_is_installed(self, path_id: int | None) -> bool:
+        if path_id is None:
+            return True
+        forwarder = getattr(self.node, "forwarder", None)
+        fib = getattr(forwarder, "fib", None)
+        table = getattr(fib, "table", None)
+        return isinstance(table, dict) and path_id in table
 
     def RecvClassicPacketHandler(self, event: RecvClassicPacket) -> bool:
         msg = event.packet.get()
@@ -310,13 +343,13 @@ class LinkLayer(Application[QNode]):
                 # Asignamos todos los disponibles (o un máximo razonable) para este ciclo
                 # Limit to avoid exhausting memory all at once
                 max_per_cycle = min(len(unallocated_raw), 10)  # Reasonable batch size
-                for q in unallocated_raw[:max_per_cycle]:
-                    q.qchannel = qchannel
+                assigned = self.memory.assign(qchannel, n=max_per_cycle)
+                reassigned_qubits = [self.memory._storage[addr][0] for addr in assigned]
+                for q in reassigned_qubits:
                     q.path_id = path_id
-                    q.enable_trace(f"{self.node.name}:path={path_id}")
                     q.trace_event("run_active_channel_continuous_reassign", self.simulator.tc, 
                                  note=f"qchannel={qchannel.name} cycle_reassignment")
-                qubits = [(q, None) for q in unallocated_raw[:max_per_cycle]]
+                qubits = [(q, None) for q in reassigned_qubits]
                 log.debug(f"{self.node}: Reassigned {len(qubits)} unallocated RAW qubits to {qchannel.name} for continuous flow")
             else:
                 log.debug(f"{self.node}: No unallocated RAW qubits found for {qchannel.name}, path_id={path_id}")
@@ -338,7 +371,6 @@ class LinkLayer(Application[QNode]):
             # - If qubit unallocated and RAW -> allocate to this path and start reservation.
             if is_correct_path:
                 if qb.state == QubitState.RAW:
-                    qb.enable_trace(f"{self.node.name}:path={path_id}")
                     qb.trace_event("run_active_channel_selected", self.simulator.tc, note=f"qchannel={qchannel.name}")
                     self.start_reservation(next_hop, qchannel, qb)
                 elif qb.state == QubitState.ACTIVE:
@@ -350,18 +382,12 @@ class LinkLayer(Application[QNode]):
             elif is_unallocated and qb.state == QubitState.RAW:
                 # This qubit is free, assign it to our path and start reservation
                 qb.path_id = path_id
-                qb.enable_trace(f"{self.node.name}:path={path_id}")
                 qb.trace_event("run_active_channel_assigned", self.simulator.tc, note=f"qchannel={qchannel.name}")
                 self.start_reservation(next_hop, qchannel, qb)
             else:
-                stack = " | ".join(
-                    f"{frame.name}@{frame.filename.rsplit('\\', 1)[-1]}:{frame.lineno}"
-                    for frame in traceback.extract_stack(limit=8)[:-1]
-                )
-                trace_dump = qb.trace_dump() if getattr(qb, "trace_enabled", False) else "<trace disabled>"
-                log.warning(
-                    f"{self.node}: Qubit {qb.addr} descartado (path_id={qubit_path_id}, path_id_esperado={path_id}, estado={qb.state.name}, t={self.simulator.tc.sec:.6f})\n"
-                    f"stack={stack}\n{trace_dump}"
+                log.debug(
+                    f"{self.node}: skipping qubit {qb.addr} assigned to path_id={qubit_path_id} "
+                    f"while activating path_id={path_id}, state={qb.state.name}"
                 )
 
     def start_reservation(self, next_hop: QNode, qchannel: QuantumChannel, qubit: MemoryQubit):
@@ -416,6 +442,14 @@ class LinkLayer(Application[QNode]):
         if qchannel is None:
             log.error(f"{self.node}: Canal {qchannel_name} no encontrado para reserva.")
             return
+
+        if not self._path_is_installed(msg["path_id"]):
+            self.cnt.n_stale_control += 1
+            log.warning(
+                f"{self.node}: discarded stale RESERVE_QUBIT key={msg['key']} "
+                f"path_id={msg['path_id']}"
+            )
+            return
         
         req = ReservationRequest(msg["key"], msg["path_id"], cchannel, from_node, qchannel)
         if not self.try_accept_reservation(req):
@@ -460,8 +494,23 @@ class LinkLayer(Application[QNode]):
         1. Trigger the entanglement generation process using the reserved memory qubit.
         """
         key = msg["key"]
-        (qchannel, next_hop, qubit) = self.pending_init_reservation.pop(key)
-        assert qubit.active == key
+        pending = self.pending_init_reservation.pop(key, None)
+        if pending is None:
+            self.cnt.n_stale_control += 1
+            log.warning(f"{self.node}: discarded stale RESERVE_QUBIT_OK key={key}")
+            return
+
+        qchannel, next_hop, qubit = pending
+        if qubit.active != key or not self._path_is_installed(qubit.path_id):
+            if qubit.active == key:
+                qubit.reset_state()
+            self.cnt.n_stale_control += 1
+            log.warning(
+                f"{self.node}: discarded invalid RESERVE_QUBIT_OK key={key} "
+                f"path_id={qubit.path_id}"
+            )
+            return
+
         qubit.state = QubitState.RESERVED
         qubit.trace_event("reservation_confirmed", self.simulator.tc, note=f"qchannel={qchannel.name}")
         self.generate_entanglement(qchannel, next_hop, qubit)
@@ -477,10 +526,22 @@ class LinkLayer(Application[QNode]):
         """
         # 1. Tirar el dado probabilístico para este único disparo
         controller = getattr(getattr(self.node, 'network', None), 'controller', None)
-        if rng.random() > qchannel.link_arch.success_prob:
+        # Use JSON-assigned probability if available, otherwise use computed probability
+        json_success_prob = getattr(qchannel.link_arch, '_json_success_prob', None)
+        prob_to_use = (
+            qchannel.link_arch.success_prob
+            if json_success_prob is None
+            else json_success_prob
+        )
+        if rng.random() > prob_to_use:
             # El fotón se perdió en la fibra en este ciclo.
             if controller is not None and hasattr(controller, 'record_local_entanglement'):
-                controller.record_local_entanglement(qchannel.name, success=False, time=self.simulator.tc)
+                controller.record_local_entanglement(
+                    qchannel.name,
+                    success=False,
+                    time=self.simulator.tc,
+                    path_id=qubit.path_id,
+                )
 
             # Release this reservation immediately so the same channel can retry
             # in later cycles instead of remaining stuck in RESERVED/ACTIVE.
@@ -507,7 +568,12 @@ class LinkLayer(Application[QNode]):
             return
 
         if controller is not None and hasattr(controller, 'record_local_entanglement'):
-            controller.record_local_entanglement(qchannel.name, success=True, time=self.simulator.tc)
+            controller.record_local_entanglement(
+                qchannel.name,
+                success=True,
+                time=self.simulator.tc,
+                path_id=qubit.path_id,
+            )
 
         # 2. Si llegamos aquí, el fotón sobrevivió y el intento fue un éxito.
         # Como es un solo disparo en este turno, el intento exitoso es el número 1.
@@ -536,20 +602,32 @@ class LinkLayer(Application[QNode]):
         self.simulator.add_event(LinkArchSuccessEvent(next_hop, epr, t=t_notify_b, attempts=k))
 
     def handle_success_entangle(self, event: LinkArchSuccessEvent):
-        assert self.node.timing.is_external()
-
         epr = event.epr
         neighbor, is_primary = (epr.dst, True) if epr.src == self.node else (epr.src, False)
         assert neighbor is not None
+
+        log.debug(f"{self.node}: got half-EPR {epr.name} key={epr.key} {'dst' if is_primary else 'src'}={neighbor}")
+        reservation = next(
+            self.memory.find(lambda qubit, value: qubit.active == epr.key and value is None),
+            None,
+        )
+        if (
+            not self.node.timing.is_external()
+            or reservation is None
+            or not self._path_is_installed(reservation[0].path_id)
+        ):
+            self.cnt.n_stale_entanglement += 1
+            log.warning(
+                f"{self.node}: discarded stale EPR {epr.name} key={epr.key}"
+            )
+            return
+
         if is_primary:
             self.cnt.increment_n_etg(event.attempts)
 
-        log.debug(f"{self.node}: got half-EPR {epr.name} key={epr.key} {'dst' if is_primary else 'src'}={neighbor}")
         assert epr.decohere_time > self.simulator.tc
 
         qubit = self.memory.write(epr.key, epr)
-        if qubit is None:
-            raise Exception(f"{self.node}: Failed to store EPR {epr.name}")
         try:
             log.debug(f"{self.node}: stored EPR {epr.name} addr={getattr(qubit,'addr',None)} path_id={getattr(qubit,'path_id',None)} active={getattr(qubit,'active',None)}")
         except Exception:

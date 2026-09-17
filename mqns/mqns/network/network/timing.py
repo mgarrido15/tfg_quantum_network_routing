@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from collections import deque
 from enum import Enum, auto
+import math
 from typing import TYPE_CHECKING, final, override
 
 from mqns.simulator import Event, Time, func_to_event
@@ -8,6 +9,21 @@ from mqns.utils import log
 
 if TYPE_CHECKING:
     from mqns.network.network import QuantumNetwork
+
+
+def complete_cycle_count(sim_time: float, cycle_time: float) -> int:
+    if sim_time <= 0:
+        raise ValueError("Simulation time must be positive")
+    if cycle_time <= 0:
+        raise ValueError("Cycle time must be positive")
+    cycles = sim_time / cycle_time
+    rounded_cycles = round(cycles)
+    if not math.isclose(cycles, rounded_cycles, rel_tol=0.0, abs_tol=1e-9):
+        raise ValueError(
+            f"Simulation time {sim_time} must be an exact multiple of "
+            f"the {cycle_time}-second cycle"
+        )
+    return rounded_cycles
 
 
 class TimingPhase(Enum):
@@ -146,6 +162,9 @@ class TimingModeSync(TimingMode):
         self.simulator.add_event(func_to_event(self.simulator.ts, self.signal_phase))
 
     def signal_phase(self):
+        if self.simulator.te is not None and self.simulator.tc >= self.simulator.te:
+            return
+
         this_phase = self.sequence.popleft()
         self.sequence.append(this_phase)
         phase, duration = this_phase
@@ -210,8 +229,17 @@ class TimingModeSync(TimingMode):
     
     
 class TimingModeSyncQCast(TimingMode):
-    def __init__(self, t1: float, t2: float, t3: float, t4: float, name="SYNC_QCAST"):
+    def __init__(
+        self,
+        t1: float,
+        t2: float,
+        t3: float,
+        t4: float,
+        name="SYNC_QCAST",
+        reset_memories_each_cycle: bool = True,
+    ):
         super().__init__(name)
+        self.reset_memories_each_cycle = reset_memories_each_cycle
         self.sequence = deque([
             (TimingPhase.P1, t1),
             (TimingPhase.P2, t2),
@@ -228,6 +256,9 @@ class TimingModeSyncQCast(TimingMode):
         self.simulator.add_event(func_to_event(self.simulator.ts, self.signal_phase))
 
     def signal_phase(self):
+        if self.simulator.te is not None and self.simulator.tc >= self.simulator.te:
+            return
+
         this_phase = self.sequence.popleft()
         self.sequence.append(this_phase)
         phase, duration = this_phase
@@ -242,35 +273,19 @@ class TimingModeSyncQCast(TimingMode):
         for node in self.network.all_nodes:
             node.handle(event)
 
-        if phase == TimingPhase.P1:
+        if phase == TimingPhase.P1 and self.reset_memories_each_cycle:
             if hasattr(self.network, "nodes"):
                 for node in self.network.nodes:
                     memory = getattr(node, "memory", None)
                     if memory:
-                        qubits = getattr(memory, "qubits", [])
-                        for q in qubits:
-                            q.reset_state()
-                            q.path_id = None
-                            q.active = None
-                            q.entangled_qubit = None
+                        memory.clear()
 
                     forwarder = getattr(node, "forwarder", None)
                     if forwarder:
-                        if hasattr(forwarder, "active_swaps"):
-                            forwarder.active_swaps.clear()
-                        if hasattr(forwarder, "assigned_qubits"):
-                            forwarder.assigned_qubits.clear()
-                        if hasattr(forwarder, "requests"):
-                            forwarder.requests.clear()
-
-                    apps = getattr(node, "apps", [])
-                    for app in apps:
-                        app_assigned = getattr(app, "assigned_qubits", None)
-                        if isinstance(app_assigned, (dict, list)):
-                            app_assigned.clear()
-
-                        if hasattr(app, "queue") and hasattr(app.queue, "clear"):
-                            app.queue.clear()
+                        forwarder.waiting_etg.clear()
+                        forwarder.waiting_su.clear()
+                        forwarder.parallel_swappings.clear()
+                        forwarder.remote_swapped_eprs.clear()
 
     @override
     def is_async(self) -> bool:

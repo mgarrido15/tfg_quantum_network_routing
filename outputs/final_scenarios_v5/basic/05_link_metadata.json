@@ -1,0 +1,606 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-17T23:46:22.987493+02:00",
+  "nodes": [
+    {
+      "id": "n1",
+      "capacity": 6,
+      "t_cohere": 40.0,
+      "node_fidelity": 0.91
+    },
+    {
+      "id": "n2",
+      "capacity": 12,
+      "t_cohere": 40.0,
+      "node_fidelity": 0.99
+    },
+    {
+      "id": "n3",
+      "capacity": 12,
+      "t_cohere": 40.0,
+      "node_fidelity": 0.99
+    },
+    {
+      "id": "n4",
+      "capacity": 6,
+      "t_cohere": 40.0,
+      "node_fidelity": 0.95
+    },
+    {
+      "id": "n5",
+      "capacity": 6,
+      "t_cohere": 40.0,
+      "node_fidelity": 0.94
+    },
+    {
+      "id": "n6",
+      "capacity": 7,
+      "t_cohere": 40.0,
+      "node_fidelity": 0.99
+    },
+    {
+      "id": "n7",
+      "capacity": 7,
+      "t_cohere": 40.0,
+      "node_fidelity": 0.99
+    },
+    {
+      "id": "n8",
+      "capacity": 6,
+      "t_cohere": 40.0,
+      "node_fidelity": 0.99
+    }
+  ],
+  "links": [
+    {
+      "name": "QC_n1_n2_ch0",
+      "u": "n1",
+      "v": "n2",
+      "length_km": 22.802478,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.3499052349231517,
+      "configured_fidelity": 0.847078,
+      "transfer_survival_probability": 0.7961045321207224,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n1_n2_ch1",
+      "u": "n1",
+      "v": "n2",
+      "length_km": 22.802478,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.3499052349231517,
+      "configured_fidelity": 0.847078,
+      "transfer_survival_probability": 0.7961045321207224,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n1_n2_ch2",
+      "u": "n1",
+      "v": "n2",
+      "length_km": 22.802478,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.3499052349231517,
+      "configured_fidelity": 0.847078,
+      "transfer_survival_probability": 0.7961045321207224,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n1_n2_ch3",
+      "u": "n1",
+      "v": "n2",
+      "length_km": 22.802478,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.30000000079223715,
+      "configured_fidelity": 0.847078,
+      "transfer_survival_probability": 0.7961045321207224,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n1_n2_ch4",
+      "u": "n1",
+      "v": "n2",
+      "length_km": 22.802478,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.30000000079223715,
+      "configured_fidelity": 0.847078,
+      "transfer_survival_probability": 0.7961045321207224,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n1_n3_ch0",
+      "u": "n1",
+      "v": "n3",
+      "length_km": 22.802478,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.3499052349231517,
+      "configured_fidelity": 0.847078,
+      "transfer_survival_probability": 0.7961045321207224,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n1_n3_ch1",
+      "u": "n1",
+      "v": "n3",
+      "length_km": 22.802478,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.3499052349231517,
+      "configured_fidelity": 0.847078,
+      "transfer_survival_probability": 0.7961045321207224,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n1_n3_ch2",
+      "u": "n1",
+      "v": "n3",
+      "length_km": 22.802478,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.3499052349231517,
+      "configured_fidelity": 0.847078,
+      "transfer_survival_probability": 0.7961045321207224,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n1_n3_ch3",
+      "u": "n1",
+      "v": "n3",
+      "length_km": 22.802478,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.30000000079223715,
+      "configured_fidelity": 0.847078,
+      "transfer_survival_probability": 0.7961045321207224,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n1_n3_ch4",
+      "u": "n1",
+      "v": "n3",
+      "length_km": 22.802478,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.30000000079223715,
+      "configured_fidelity": 0.847078,
+      "transfer_survival_probability": 0.7961045321207224,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n2_n4_ch0",
+      "u": "n2",
+      "v": "n4",
+      "length_km": 0.187595,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.8499999807260112,
+      "configured_fidelity": 0.998594,
+      "transfer_survival_probability": 0.9981258084944135,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n2_n4_ch1",
+      "u": "n2",
+      "v": "n4",
+      "length_km": 0.187595,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.8499999807260112,
+      "configured_fidelity": 0.998594,
+      "transfer_survival_probability": 0.9981258084944135,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n2_n4_ch2",
+      "u": "n2",
+      "v": "n4",
+      "length_km": 0.187595,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.8499999807260112,
+      "configured_fidelity": 0.998594,
+      "transfer_survival_probability": 0.9981258084944135,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n2_n4_ch3",
+      "u": "n2",
+      "v": "n4",
+      "length_km": 0.187595,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.8499999807260112,
+      "configured_fidelity": 0.998594,
+      "transfer_survival_probability": 0.9981258084944135,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n2_n4_ch4",
+      "u": "n2",
+      "v": "n4",
+      "length_km": 0.187595,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.8499999807260112,
+      "configured_fidelity": 0.998594,
+      "transfer_survival_probability": 0.9981258084944135,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n3_n5_ch0",
+      "u": "n3",
+      "v": "n5",
+      "length_km": 0.967848,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.9564076472675245,
+      "configured_fidelity": 0.992776,
+      "transfer_survival_probability": 0.9903682057504554,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n3_n5_ch1",
+      "u": "n3",
+      "v": "n5",
+      "length_km": 0.967848,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.9564076472675245,
+      "configured_fidelity": 0.992776,
+      "transfer_survival_probability": 0.9903682057504554,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n3_n5_ch2",
+      "u": "n3",
+      "v": "n5",
+      "length_km": 0.967848,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.9564076472675245,
+      "configured_fidelity": 0.992776,
+      "transfer_survival_probability": 0.9903682057504554,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n3_n5_ch3",
+      "u": "n3",
+      "v": "n5",
+      "length_km": 0.967848,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.8200000065759936,
+      "configured_fidelity": 0.992776,
+      "transfer_survival_probability": 0.9903682057504554,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n3_n5_ch4",
+      "u": "n3",
+      "v": "n5",
+      "length_km": 0.967848,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.8200000065759936,
+      "configured_fidelity": 0.992776,
+      "transfer_survival_probability": 0.9903682057504554,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n3_n7_ch0",
+      "u": "n3",
+      "v": "n7",
+      "length_km": 0.967848,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.9564076472675245,
+      "configured_fidelity": 0.992776,
+      "transfer_survival_probability": 0.9903682057504554,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n3_n7_ch1",
+      "u": "n3",
+      "v": "n7",
+      "length_km": 0.967848,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.9564076472675245,
+      "configured_fidelity": 0.992776,
+      "transfer_survival_probability": 0.9903682057504554,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n3_n7_ch2",
+      "u": "n3",
+      "v": "n7",
+      "length_km": 0.967848,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.9564076472675245,
+      "configured_fidelity": 0.992776,
+      "transfer_survival_probability": 0.9903682057504554,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n3_n7_ch3",
+      "u": "n3",
+      "v": "n7",
+      "length_km": 0.967848,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.8200000065759936,
+      "configured_fidelity": 0.992776,
+      "transfer_survival_probability": 0.9903682057504554,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n3_n7_ch4",
+      "u": "n3",
+      "v": "n7",
+      "length_km": 0.967848,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.8200000065759936,
+      "configured_fidelity": 0.992776,
+      "transfer_survival_probability": 0.9903682057504554,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n4_n5_ch0",
+      "u": "n4",
+      "v": "n5",
+      "length_km": 2.334005,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.8980900813537358,
+      "configured_fidelity": 0.982698,
+      "transfer_survival_probability": 0.9769302221616523,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n4_n5_ch1",
+      "u": "n4",
+      "v": "n5",
+      "length_km": 2.334005,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.8980900813537358,
+      "configured_fidelity": 0.982698,
+      "transfer_survival_probability": 0.9769302221616523,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n4_n5_ch2",
+      "u": "n4",
+      "v": "n5",
+      "length_km": 2.334005,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.8980900813537358,
+      "configured_fidelity": 0.982698,
+      "transfer_survival_probability": 0.9769302221616523,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n4_n5_ch3",
+      "u": "n4",
+      "v": "n5",
+      "length_km": 2.334005,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.7699999835006591,
+      "configured_fidelity": 0.982698,
+      "transfer_survival_probability": 0.9769302221616523,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n4_n5_ch4",
+      "u": "n4",
+      "v": "n5",
+      "length_km": 2.334005,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.7699999835006591,
+      "configured_fidelity": 0.982698,
+      "transfer_survival_probability": 0.9769302221616523,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n2_n6_ch0",
+      "u": "n2",
+      "v": "n6",
+      "length_km": 0.187595,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.9913981405172898,
+      "configured_fidelity": 0.998594,
+      "transfer_survival_probability": 0.9981258084944135,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n2_n6_ch1",
+      "u": "n2",
+      "v": "n6",
+      "length_km": 0.187595,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.9913981405172898,
+      "configured_fidelity": 0.998594,
+      "transfer_survival_probability": 0.9981258084944135,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n2_n6_ch2",
+      "u": "n2",
+      "v": "n6",
+      "length_km": 0.187595,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.9913981405172898,
+      "configured_fidelity": 0.998594,
+      "transfer_survival_probability": 0.9981258084944135,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n2_n6_ch3",
+      "u": "n2",
+      "v": "n6",
+      "length_km": 0.187595,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.8499999807260112,
+      "configured_fidelity": 0.998594,
+      "transfer_survival_probability": 0.9981258084944135,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n2_n6_ch4",
+      "u": "n2",
+      "v": "n6",
+      "length_km": 0.187595,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.8499999807260112,
+      "configured_fidelity": 0.998594,
+      "transfer_survival_probability": 0.9981258084944135,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n6_n7_ch0",
+      "u": "n6",
+      "v": "n7",
+      "length_km": 2.334005,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.8980900813537358,
+      "configured_fidelity": 0.982698,
+      "transfer_survival_probability": 0.9769302221616523,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n6_n7_ch1",
+      "u": "n6",
+      "v": "n7",
+      "length_km": 2.334005,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.8980900813537358,
+      "configured_fidelity": 0.982698,
+      "transfer_survival_probability": 0.9769302221616523,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n6_n7_ch2",
+      "u": "n6",
+      "v": "n7",
+      "length_km": 2.334005,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.8980900813537358,
+      "configured_fidelity": 0.982698,
+      "transfer_survival_probability": 0.9769302221616523,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n6_n7_ch3",
+      "u": "n6",
+      "v": "n7",
+      "length_km": 2.334005,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.7699999835006591,
+      "configured_fidelity": 0.982698,
+      "transfer_survival_probability": 0.9769302221616523,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n6_n7_ch4",
+      "u": "n6",
+      "v": "n7",
+      "length_km": 2.334005,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.7699999835006591,
+      "configured_fidelity": 0.982698,
+      "transfer_survival_probability": 0.9769302221616523,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n7_n8_ch0",
+      "u": "n7",
+      "v": "n8",
+      "length_km": 3.196955,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.7399999934153425,
+      "configured_fidelity": 0.976402,
+      "transfer_survival_probability": 0.9685360735536274,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n7_n8_ch1",
+      "u": "n7",
+      "v": "n8",
+      "length_km": 3.196955,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.7399999934153425,
+      "configured_fidelity": 0.976402,
+      "transfer_survival_probability": 0.9685360735536274,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n7_n8_ch2",
+      "u": "n7",
+      "v": "n8",
+      "length_km": 3.196955,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.7399999934153425,
+      "configured_fidelity": 0.976402,
+      "transfer_survival_probability": 0.9685360735536274,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n7_n8_ch3",
+      "u": "n7",
+      "v": "n8",
+      "length_km": 3.196955,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.7399999934153425,
+      "configured_fidelity": 0.976402,
+      "transfer_survival_probability": 0.9685360735536274,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n7_n8_ch4",
+      "u": "n7",
+      "v": "n8",
+      "length_km": 3.196955,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.7399999934153425,
+      "configured_fidelity": 0.976402,
+      "transfer_survival_probability": 0.9685360735536274,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n8_n6_ch0",
+      "u": "n8",
+      "v": "n6",
+      "length_km": 4.403639,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.6999999933146756,
+      "configured_fidelity": 0.967689,
+      "transfer_survival_probability": 0.9569191345521412,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n8_n6_ch1",
+      "u": "n8",
+      "v": "n6",
+      "length_km": 4.403639,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.6999999933146756,
+      "configured_fidelity": 0.967689,
+      "transfer_survival_probability": 0.9569191345521412,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n8_n6_ch2",
+      "u": "n8",
+      "v": "n6",
+      "length_km": 4.403639,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.6999999933146756,
+      "configured_fidelity": 0.967689,
+      "transfer_survival_probability": 0.9569191345521412,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n8_n6_ch3",
+      "u": "n8",
+      "v": "n6",
+      "length_km": 4.403639,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.6999999933146756,
+      "configured_fidelity": 0.967689,
+      "transfer_survival_probability": 0.9569191345521412,
+      "parallel_channels": 5
+    },
+    {
+      "name": "QC_n8_n6_ch4",
+      "u": "n8",
+      "v": "n6",
+      "length_km": 4.403639,
+      "alpha_db_per_km": 0.2,
+      "success_probability": 0.6999999933146756,
+      "configured_fidelity": 0.967689,
+      "transfer_survival_probability": 0.9569191345521412,
+      "parallel_channels": 5
+    }
+  ]
+}

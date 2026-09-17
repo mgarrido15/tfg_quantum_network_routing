@@ -1,0 +1,128 @@
+{
+  "nodos": [
+    {"id": "n1", "capacity": 6, "fidelity": 0.91},
+    {"id": "n2", "capacity": 12, "fidelity": 0.99},
+    {"id": "n3", "capacity": 12, "fidelity": 0.99},
+    {"id": "n4", "capacity": 6, "fidelity": 0.95},
+    {"id": "n5", "capacity": 6, "fidelity": 0.94},
+    {"id": "n6", "capacity": 7, "fidelity": 0.99},
+    {"id": "n7", "capacity": 7, "fidelity": 0.99},
+    {"id": "n8", "capacity": 6, "fidelity": 0.99}
+  ],
+  "enlaces": [
+    {
+      "u": "n1",
+      "v": "n2",
+      "length": 22.802478,
+      "alpha": 0.2,
+      "eta_s": 0.95,
+      "eta_d": 0.95,
+      "channels": 5,
+      "fidelity": 0.847078,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n1",
+      "v": "n3",
+      "length": 22.802478,
+      "alpha": 0.2,
+      "eta_s": 0.95,
+      "eta_d": 0.95,
+      "channels": 5,
+      "fidelity": 0.847078,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n2",
+      "v": "n4",
+      "length": 0.187595,
+      "alpha": 0.2,
+      "eta_s": 0.95,
+      "eta_d": 0.95,
+      "channels": 5,
+      "fidelity": 0.998594,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n3",
+      "v": "n5",
+      "length": 0.967848,
+      "alpha": 0.2,
+      "eta_s": 0.95,
+      "eta_d": 0.95,
+      "channels": 5,
+      "fidelity": 0.992776,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n3",
+      "v": "n7",
+      "length": 0.967848,
+      "alpha": 0.2,
+      "eta_s": 0.95,
+      "eta_d": 0.95,
+      "channels": 5,
+      "fidelity": 0.992776,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n4",
+      "v": "n5",
+      "length": 2.334005,
+      "alpha": 0.2,
+      "eta_s": 0.95,
+      "eta_d": 0.95,
+      "channels": 5,
+      "fidelity": 0.982698,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n2",
+      "v": "n6",
+      "length": 0.187595,
+      "alpha": 0.2,
+      "eta_s": 0.95,
+      "eta_d": 0.95,
+      "channels": 5,
+      "fidelity": 0.998594,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n6",
+      "v": "n7",
+      "length": 2.334005,
+      "alpha": 0.2,
+      "eta_s": 0.95,
+      "eta_d": 0.95,
+      "channels": 5,
+      "fidelity": 0.982698,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n7",
+      "v": "n8",
+      "length": 3.196955,
+      "alpha": 0.2,
+      "eta_s": 0.95,
+      "eta_d": 0.95,
+      "channels": 5,
+      "fidelity": 0.976402,
+      "transfer_error": "DEPOLAR:0.01"
+    },
+    {
+      "u": "n8",
+      "v": "n6",
+      "length": 4.403639,
+      "alpha": 0.2,
+      "eta_s": 0.95,
+      "eta_d": 0.95,
+      "channels": 5,
+      "fidelity": 0.967689,
+      "transfer_error": "DEPOLAR:0.01"
+    }
+  ],
+  "solicitudes": [
+    {"src": "n4", "dst": "n3"},
+    {"src": "n2", "dst": "n3"}
+  ]
+}

@@ -9,7 +9,7 @@ def build_request_id(src_name: str, dst_name: str, req_index: int) -> str:
 
 def base_req_pair_key(req_id: str) -> str:
     """Normaliza un req_id al par base src-dst para contar resultados por pareja."""
-    normalized = req_id.split("__REC_", 1)[0]
+    normalized = str(req_id).split("__REC_", 1)[0]
     parts = normalized.split("_")
     if "TO" in parts:
         idx_to = parts.index("TO")
@@ -38,7 +38,39 @@ def compute_pair_success_average_by_cycle(success_history: list[dict[str, Any]],
     return sum(len(pairs) for pairs in successful_pairs_per_cycle.values()) / float(cycle_count)
 
 
-def obtener_prob_y_fidelidad_de_ruta(net: Any, ruta: list) -> tuple[float, float]:
+def compute_request_success_rate_by_cycle(
+    success_history: list[dict[str, Any]],
+    request_ids: set[str],
+    total_cycles: int,
+) -> float:
+    if total_cycles <= 0 or not request_ids:
+        return 0.0
+
+    successful_request_cycles = {
+        (int(event.get("cycle", 0)), str(event["req_id"]))
+        for event in success_history
+        if event.get("req_id") is not None and str(event["req_id"]) in request_ids
+    }
+    return len(successful_request_cycles) / float(len(request_ids) * total_cycles)
+
+
+def compute_pair_success_rate_by_cycle(
+    success_history: list[dict[str, Any]],
+    request_ids: set[str],
+    total_cycles: int,
+) -> float:
+    pair_ids = {base_req_pair_key(req_id) for req_id in request_ids}
+    if not pair_ids or total_cycles <= 0:
+        return 0.0
+    return compute_pair_success_average_by_cycle(success_history, total_cycles) / len(pair_ids)
+
+
+def obtener_prob_y_fidelidad_de_ruta(
+    net: Any,
+    ruta: list,
+    *,
+    q_swap: float = 1.0,
+) -> tuple[float, float]:
     """
     Calcula la probabilidad de éxito estimada y fidelidad para una ruta completa.
     
@@ -48,12 +80,7 @@ def obtener_prob_y_fidelidad_de_ruta(net: Any, ruta: list) -> tuple[float, float
     Retorna: (probabilidad_estimada, fidelidad_ruta)
     """
     route_prob = 1.0      # Comenzamos con prob=1.0
-    route_fidelity = 1.0  # Comenzamos con fidelidad=1.0
-
-    # Aplicar fidelidad de nodos en la ruta
-    for nodo in ruta:
-        node_fidelity = getattr(nodo, "node_fidelity", 1.0)
-        route_fidelity *= node_fidelity
+    route_werner_w = 1.0
 
     # Iterar sobre cada enlace (par de nodos consecutivos)
     for i in range(len(ruta) - 1):
@@ -80,10 +107,13 @@ def obtener_prob_y_fidelidad_de_ruta(net: Any, ruta: list) -> tuple[float, float
             else:
                 fid = 0.99
 
-        # Multiplicar probabilidades y fidelidades (producto en serie)
+        link_werner_w = (4.0 * float(fid) - 1.0) / 3.0
         route_prob *= prob
-        route_fidelity *= fid
+        route_werner_w *= link_werner_w
 
+    swap_count = max(0, len(ruta) - 2)
+    route_prob *= q_swap**swap_count
+    route_fidelity = (3.0 * route_werner_w + 1.0) / 4.0
     return route_prob, route_fidelity
 
 
@@ -110,35 +140,28 @@ def estimar_fidelidad_observada_de_ruta(net: Any, ruta: list) -> float:
     return float(route_fidelity * swap_depth_penalty)
 
 
-def construir_resultados_qcast(controller: Any, solicitudes: list, attempts_per_route: int) -> list:
+def construir_resultados_qcast(controller: Any, solicitudes: list, attempts_per_route: int, counters: Any = None) -> list:
     resultados = []
     route_info = getattr(controller, "request_route_info", {})
+    route_history = getattr(controller, "request_route_history", {})
     success_count = getattr(controller, "request_success_count", {})
     fidelities = getattr(controller, "request_fidelities", {})
+    attempts_by_request = getattr(controller, "local_attempts_by_request", {})
 
-    # Consolidate successes/fidelities of recovery request IDs
-    # (e.g., REQ_xxx__REC_12) into their base request ID (REQ_xxx).
     base_req_ids = {req["req_id"] for req in solicitudes}
     success_count_agg = {req_id: int(success_count.get(req_id, 0)) for req_id in base_req_ids}
     fidelities_agg = {req_id: list(fidelities.get(req_id, [])) for req_id in base_req_ids}
-
-    for req_id_alias, alias_successes in success_count.items():
-        if "__REC_" not in req_id_alias:
-            continue
-
-        req_id_base = req_id_alias.split("__REC_", 1)[0]
-        if req_id_base not in base_req_ids:
-            continue
-
-        success_count_agg[req_id_base] = success_count_agg.get(req_id_base, 0) + int(alias_successes)
-        if req_id_alias in fidelities:
-            fidelities_agg.setdefault(req_id_base, []).extend(fidelities.get(req_id_alias, []))
 
     for req in solicitudes:
         req_id = req["req_id"]
         src = req["src"].name
         dst = req["dst"].name
         info = route_info.get(req_id, None)
+        if info is None:
+            for cycle in sorted(route_history, reverse=True):
+                info = route_history[cycle].get(req_id)
+                if info is not None:
+                    break
 
         if info is None:
             resultados.append(
@@ -151,8 +174,9 @@ def construir_resultados_qcast(controller: Any, solicitudes: list, attempts_per_
                     "route_success_prob": 0.0,
                     "route_fidelity": 0.0,
                     "route_width": 0,
-                    "attempts": attempts_per_route,
-                    "successes": 0,
+                    "attempts": int(attempts_by_request.get(req_id, 0)),
+                    "successes": success_count_agg.get(req_id, 0),
+                    "observed_fidelity": None,
                 }
             )
             continue
@@ -167,12 +191,12 @@ def construir_resultados_qcast(controller: Any, solicitudes: list, attempts_per_
                 "route_success_prob": info.get("route_success_prob", 0.0),
                 "route_fidelity": info.get("route_fidelity", 0.0),
                 "route_width": info.get("w_asignado", 0),
-                "attempts": attempts_per_route,
+                "attempts": int(attempts_by_request.get(req_id, attempts_per_route)),
                 "successes": success_count_agg.get(req_id, 0),
                 "observed_fidelity": (
                     float(sum(fidelities_agg.get(req_id, [])) / len(fidelities_agg.get(req_id, [])))
                     if len(fidelities_agg.get(req_id, [])) > 0
-                    else 0.0
+                    else None
                 ),
             }
         )
@@ -205,8 +229,10 @@ def agregar_por_par(resultados: list) -> dict:
         if r["route"] is not None:
             a["fidelity_sum"] += r["route_fidelity"]
             a["fidelity_count"] += 1
-            a["observed_fidelity_sum"] += r.get("observed_fidelity", 0.0)
-            a["observed_fidelity_count"] += 1 if r.get("observed_fidelity", 0.0) > 0 else 0
+            observed_fidelity = r.get("observed_fidelity")
+            if observed_fidelity is not None:
+                a["observed_fidelity_sum"] += observed_fidelity
+                a["observed_fidelity_count"] += 1
             a["route_probs"].append(r["route_success_prob"])
             a["route_widths"].append(r["route_width"])
             a["routes"].append(" -> ".join(r["route"]))
@@ -241,7 +267,7 @@ def imprimir_resumen_algoritmo(nombre: str, resultados: list, sim_time: float) -
         fidelidad_observada = (
             (agg.get("observed_fidelity_sum", 0.0) / agg.get("observed_fidelity_count", 1))
             if agg.get("observed_fidelity_count", 0) > 0
-            else 0.0
+            else None
         )
         route_width = min(agg["route_widths"]) if agg["route_widths"] else 0
         rutas = "; ".join(sorted(set(agg["routes"]))) if agg["routes"] else "SIN_RUTA"
@@ -251,7 +277,11 @@ def imprimir_resumen_algoritmo(nombre: str, resultados: list, sim_time: float) -
         print(f"  - Throughput ruta: {throughput_par:.4f} EPS")
         print(f"  - Probabilidad de exito de la ruta: {p_exito:.4f}")
         print(f"  - Fidelidad de la ruta: {fidelidad:.4f}")
-        print(f"  - Fidelidad observada: {fidelidad_observada:.4f}")
+        print(
+            f"  - Fidelidad observada: {fidelidad_observada:.4f}"
+            if fidelidad_observada is not None
+            else "  - Fidelidad observada: N/D (sin entregas)"
+        )
         print(f"  - Memoria minima de ruta: {route_width} qubits")
         print(f"  - Ruta usada: {rutas}")
 
@@ -289,7 +319,7 @@ def imprimir_info_rutas_detallada(
             observed_samples = []
             if controller is not None and hasattr(controller, 'request_fidelities'):
                 observed_samples = getattr(controller, 'request_fidelities', {}).get(req_id, [])
-            observed_fid = float(sum(observed_samples) / len(observed_samples)) if observed_samples else 0.0
+            observed_fid = float(sum(observed_samples) / len(observed_samples)) if observed_samples else None
             width = info.get("width", 0)
             metric = info.get("metric", None)
             successes = success_count.get(req_id, 0)
@@ -307,7 +337,11 @@ def imprimir_info_rutas_detallada(
             print(f"    - Throughput: {throughput:.4f} EPS")
             print(f"    - Probabilidad observada: {observed_prob:.4f}")
             print(f"    - Fidelidad: {fid:.4f}")
-            print(f"    - Fidelidad observada: {observed_fid:.4f}")
+            print(
+                "    - Fidelidad observada: "
+                f"{observed_fid:.4f}" if observed_fid is not None
+                else "    - Fidelidad observada: N/D (sin entregas)"
+            )
             print(f"    - Memoria minima: {info.get('w_asignado', 0)}")
             if install_ok > 0 or install_fail > 0:
                 print(f"    - Instalacion canales OK/FALLA: {install_ok}/{install_fail}")

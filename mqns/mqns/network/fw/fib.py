@@ -29,7 +29,7 @@ from mqns.utils import log
 class FibEntry:
     path_id: int
     """Path identifier, identifies end-to-end path."""
-    req_id: int
+    req_id: int | str
     """Request identifier, identifies source-destination pair."""
     route: list[str]
     """List of nodes traversed by the path."""
@@ -117,7 +117,7 @@ class Fib:
         Key is path_id.
         Value is FIB entry.
         """
-        self.by_req_id: dict[int, FibRequestGroup] = {}
+        self.by_req_id: dict[int | str, FibRequestGroup] = {}
         """
         Lookup table indexed by req_id.
         Key is req_id.
@@ -184,7 +184,7 @@ class Fib:
         if rg.remove(entry):
             del self.by_req_id[entry.req_id]
 
-    def list_path_ids_by_request_id(self, request_id: int) -> Set[int]:
+    def list_path_ids_by_request_id(self, request_id: int | str) -> Set[int]:
         rg = self.by_req_id.get(request_id)
         if rg:
             return rg.path_ids
