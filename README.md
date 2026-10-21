@@ -102,6 +102,8 @@ python scripts/comparison_algorithms.py [options]
 
 Available options:
 
+| Option | Value | Default | Description |
+| --- | --- | --- | --- |
 | `--scenario` | Base JSON scenario used by the experiment. 
 | `--sim-time` | Total simulated time in seconds. 
 | `--fidelity-scale` | Multiplicative degradation applied to link fidelity. 
@@ -150,6 +152,9 @@ python scripts/run_final_scenarios.py --scenario basic --sim-time 1000
 python scripts/run_final_scenarios.py --scenario large --sim-time 1000
 python scripts/run_final_scenarios.py --scenario ideal --sim-time 1000
 ```
+
+
+
 
 ### Multi-seed convergence and paired comparisons
 
