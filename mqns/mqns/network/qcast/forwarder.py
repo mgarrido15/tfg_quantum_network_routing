@@ -253,13 +253,23 @@ class QCastForwarder(Forwarder):
                         direction = PathDirection.L if neighbor == l_neighbor else PathDirection.R
                         asegurar_recursos(qc, direction)
                     else:
-                        addrs = [
-                            q.addr
+                        qubits = [
+                            q
                             for q, _ in self.node.memory.find(
                                 lambda q, _: q.path_id == path_id,
                                 qchannel=qc,
                             )
                         ]
+                        addrs = [q.addr for q in qubits]
+                        reset_memories = getattr(
+                            self.node.timing,
+                            "reset_memories_each_cycle",
+                            True,
+                        )
+                        if not reset_memories:
+                            for qubit in qubits:
+                                if qubit.state not in (QubitState.RAW, QubitState.RELEASE):
+                                    self.release_qubit(qubit, need_remove=True)
                         self.node.memory.deallocate(*addrs)
                     if hasattr(self, 'controller') and self.controller and not uninstall and neighbor == r_neighbor:
                         if hasattr(self.controller, 'record_qchannel_activation'):
@@ -525,16 +535,22 @@ class QCastForwarder(Forwarder):
                 if q_state in ["PURIF", "PENDING"] and (purif_rounds > 3 or time_in_state > 10):
                     log.debug(f"{self.node}: CLEANUP: Qubit {q.addr} stuck in {q_state} for {time_in_state}, recycling")
                     q.trace_event("qcast_cleanup_recycle", self.simulator.tc, note=f"from={q_state}")
-                    q.reset_state()
-                    q.path_id = None
-                    q.qchannel = None
+                    if self.node.timing.reset_memories_each_cycle:
+                        q.reset_state()
+                        q.path_id = None
+                        q.qchannel = None
+                    else:
+                        self.release_qubit(q, need_remove=True)
                 # If ELIGIBLE but hasn't been consumed, it might be stuck
                 elif q_state == "ELIGIBLE" and time_in_state > 5 and purif_rounds >= 2:
                     log.debug(f"{self.node}: CLEANUP: Qubit {q.addr} ELIGIBLE but not consumed, recycling")
                     q.trace_event("qcast_cleanup_recycle", self.simulator.tc, note="from=ELIGIBLE")
-                    q.reset_state()
-                    q.path_id = None
-                    q.qchannel = None
+                    if self.node.timing.reset_memories_each_cycle:
+                        q.reset_state()
+                        q.path_id = None
+                        q.qchannel = None
+                    else:
+                        self.release_qubit(q, need_remove=True)
 
     def _send_initial_queries(self):
         net = getattr(self.node, 'network', None)

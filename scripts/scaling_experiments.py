@@ -40,14 +40,12 @@ try:
     from simulation_utils import (
         create_simulation_folder,
         mean_ci95,
-        print_simulation_summary,
         save_graph,
     )
 except ModuleNotFoundError:
     from scripts.simulation_utils import (
         create_simulation_folder,
         mean_ci95,
-        print_simulation_summary,
         save_graph,
     )
 
@@ -196,6 +194,7 @@ def run_single_simulation(
     reserve_all_capacity=False,
     forwarder_class=None,
     priority_seed: int = 0,
+    reset_memories_each_cycle: bool = RESET_MEMORIES_EACH_CYCLE,
 ) -> dict[str, Any]:
     ciclos_totales = complete_cycle_count(SIM_TIME, TOTAL_CYCLE_TIME)
     with open(scenario_path, "r", encoding="utf-8") as f:
@@ -234,7 +233,7 @@ def run_single_simulation(
         t2=T_PHASE,
         t3=T_PHASE,
         t4=T_PHASE,
-        reset_memories_each_cycle=RESET_MEMORIES_EACH_CYCLE,
+        reset_memories_each_cycle=reset_memories_each_cycle,
     )
     net.timing.install(net)
 
@@ -719,7 +718,8 @@ def plot_throughput_vs_network_size(
     output_dir: str,
     sizes: list[int],
     results: dict[str, list[float]],
-    ci95_half_widths: dict[str, list[float]] | None = None,
+    stddevs: dict[str, list[float]] | None = None,
+    repetitions: int | None = None,
     ylabel: str = "Throughput (EPR/s)",
 ):
     fig, ax = plt.subplots(figsize=(10.5, 6.4))
@@ -730,15 +730,24 @@ def plot_throughput_vs_network_size(
         ax.errorbar(
             sizes,
             y_values,
-            yerr=ci95_half_widths.get(alg_name) if ci95_half_widths else None,
+            yerr=stddevs.get(alg_name) if stddevs else None,
             marker=markers[i % len(markers)],
             linestyle=linestyles[i % len(linestyles)],
             linewidth=2.4,
-            markersize=8,
-            capsize=3,
+            markersize=5,
+            elinewidth=1.5,
+            capsize=5,
+            capthick=1.5,
+            barsabove=True,
             label=LEGACY_ALGORITHM_LABELS.get(alg_name, alg_name),
         )
 
+    if repetitions is not None:
+        ax.set_title(
+            f"Media de {repetitions} simulaciones; barras de error: "
+            r"$\pm 1$ desviación estándar",
+            fontsize=12,
+        )
     ax.set_xlabel("|V| (nodos)", fontsize=16)
     ax.set_ylabel(ylabel, fontsize=15)
     ax.tick_params(axis="both", labelsize=14)
@@ -758,7 +767,8 @@ def plot_throughput_vs_sd_pairs(
     output_dir: str,
     pair_counts: list[int],
     results: dict[str, list[float]],
-    ci95_half_widths: dict[str, list[float]] | None = None,
+    stddevs: dict[str, list[float]] | None = None,
+    repetitions: int | None = None,
 ):
     fig, ax = plt.subplots(figsize=(10.5, 6.4))
     markers = ["o", "s", "^", "d", "x", "P", "*"]
@@ -768,16 +778,25 @@ def plot_throughput_vs_sd_pairs(
         ax.errorbar(
             pair_counts,
             y_values,
-            yerr=ci95_half_widths.get(alg_name) if ci95_half_widths else None,
+            yerr=stddevs.get(alg_name) if stddevs else None,
             marker=markers[i % len(markers)],
             linestyle=linestyles[i % len(linestyles)],
             linewidth=2.4,
-            markersize=8,
-            capsize=3,
+            markersize=5,
+            elinewidth=1.5,
+            capsize=5,
+            capthick=1.5,
+            barsabove=True,
             label=LEGACY_ALGORITHM_LABELS.get(alg_name, alg_name),
         )
 
-    ax.set_xlabel("Número de parejas S-D", fontsize=16)
+    if repetitions is not None:
+        ax.set_title(
+            f"Media de {repetitions} simulaciones; barras de error: "
+            r"$\pm 1$ desviación estándar",
+            fontsize=12,
+        )
+    ax.set_xlabel("Número de parejas origen-destino", fontsize=16)
     ax.set_ylabel("Throughput (EPR/s)", fontsize=16)
     ax.tick_params(axis="both", labelsize=14)
     ax.grid(True, linestyle="--", alpha=0.35)
@@ -833,13 +852,15 @@ def plot_from_results_file(results_path: str, output_dir: str | None = None) -> 
 
     size_section = payload.get("throughput_vs_network_size", {})
     pair_section = payload.get("throughput_vs_sd_pairs_on_100", {})
+    config = payload.get("config", {})
 
     network_sizes = size_section.get("x")
     size_series = size_section.get("series")
-    size_ci95 = size_section.get("ci95_half_width")
+    size_stddev = size_section.get("stddev")
     pair_counts = pair_section.get("x")
     pair_series = pair_section.get("series")
-    pair_ci95 = pair_section.get("ci95_half_width")
+    pair_stddev = pair_section.get("stddev")
+    repetitions = config.get("repetitions") if isinstance(config, dict) else None
 
     if not isinstance(network_sizes, list) or not isinstance(size_series, dict):
         raise ValueError("Invalid results file: missing throughput_vs_network_size.x or .series")
@@ -853,7 +874,8 @@ def plot_from_results_file(results_path: str, output_dir: str | None = None) -> 
         target_output_dir,
         network_sizes,
         size_series,
-        ci95_half_widths=size_ci95 if isinstance(size_ci95, dict) else None,
+        stddevs=size_stddev if isinstance(size_stddev, dict) else None,
+        repetitions=repetitions if isinstance(repetitions, int) else None,
         ylabel=(
             "Throughput medio por pareja S-D (EPR/s)"
             if size_section.get("metric") == "mean_throughput_per_sd_pair_eps"
@@ -864,7 +886,8 @@ def plot_from_results_file(results_path: str, output_dir: str | None = None) -> 
         target_output_dir,
         pair_counts,
         pair_series,
-        ci95_half_widths=pair_ci95 if isinstance(pair_ci95, dict) else None,
+        stddevs=pair_stddev if isinstance(pair_stddev, dict) else None,
+        repetitions=repetitions if isinstance(repetitions, int) else None,
     )
     print(f"Using results file: {resolved_results_path}")
     return target_output_dir
@@ -929,7 +952,11 @@ def summarize_paired_throughput(
     return comparisons
 
 
-def run_campaigns(seed: int = 7, repetitions: int = 10):
+def run_campaigns(
+    seed: int = 7,
+    repetitions: int = 10,
+    reset_memories_each_cycle: bool = RESET_MEMORIES_EACH_CYCLE,
+):
     if repetitions < 1:
         raise ValueError("repetitions must be at least 1")
 
@@ -1002,6 +1029,7 @@ def run_campaigns(seed: int = 7, repetitions: int = 10):
                     reserve_all_capacity=alg.reserve_all_capacity,
                     forwarder_class=alg.forwarder_class,
                     priority_seed=priority_seed,
+                    reset_memories_each_cycle=reset_memories_each_cycle,
                 )
                 samples_by_algorithm[alg.name].append(metrics)
                 replication_info["throughput"][alg.name] = metrics
@@ -1036,7 +1064,8 @@ def run_campaigns(seed: int = 7, repetitions: int = 10):
         output_dir,
         network_sizes,
         size_experiment_results,
-        ci95_half_widths=size_experiment_ci95,
+        stddevs=size_experiment_stddev,
+        repetitions=repetitions,
     )
 
     print(f"Running throughput vs S-D pairs experiment on |V|=100 ({repetitions} repetitions per point)...")
@@ -1105,6 +1134,7 @@ def run_campaigns(seed: int = 7, repetitions: int = 10):
                     reserve_all_capacity=alg.reserve_all_capacity,
                     forwarder_class=alg.forwarder_class,
                     priority_seed=priority_seed,
+                    reset_memories_each_cycle=reset_memories_each_cycle,
                 )
                 pair_samples[n_pairs][alg.name].append(metrics)
                 replication_info["throughput"][alg.name] = metrics
@@ -1140,7 +1170,8 @@ def run_campaigns(seed: int = 7, repetitions: int = 10):
         output_dir,
         pair_counts,
         pair_experiment_results,
-        ci95_half_widths=pair_experiment_ci95,
+        stddevs=pair_experiment_stddev,
+        repetitions=repetitions,
     )
 
     results_payload = {
@@ -1153,7 +1184,7 @@ def run_campaigns(seed: int = 7, repetitions: int = 10):
             "priority_seeds": priority_seeds,
             "sim_time": SIM_TIME,
             "t_cohere": T_COHERE,
-            "reset_memories_each_cycle": RESET_MEMORIES_EACH_CYCLE,
+            "reset_memories_each_cycle": reset_memories_each_cycle,
             "swap_policy": SWAP_POLICY,
             "swap_success_probability": SWAP_SUCCESS_PROB,
             "qcast_recovery_enabled": ENABLE_QCAST_RECOVERY,
@@ -1201,7 +1232,6 @@ def run_campaigns(seed: int = 7, repetitions: int = 10):
 
     print("\nSaved:")
     print(f"  {results_path}")
-    print_simulation_summary(output_dir)
 
 
 if __name__ == "__main__":
@@ -1225,6 +1255,15 @@ if __name__ == "__main__":
         default=None,
         help="Optional output directory for regenerated plots (defaults to results file directory)",
     )
+    parser.add_argument(
+        "--reset-memories-each-cycle",
+        action=argparse.BooleanOptionalAction,
+        default=RESET_MEMORIES_EACH_CYCLE,
+        help=(
+            "Reset quantum memories at the start of each cycle "
+            "(use --no-reset-memories-each-cycle to preserve them)"
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -1233,4 +1272,8 @@ if __name__ == "__main__":
         print("\nSaved plots:")
         print(f"  {out_dir}")
     else:
-        run_campaigns(seed=args.seed, repetitions=args.repetitions)
+        run_campaigns(
+            seed=args.seed,
+            repetitions=args.repetitions,
+            reset_memories_each_cycle=args.reset_memories_each_cycle,
+        )

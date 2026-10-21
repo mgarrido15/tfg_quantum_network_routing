@@ -6,10 +6,11 @@ from pathlib import Path
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
+FINAL_SWAP_SUCCESS_PROB = 0.85
 SCENARIOS = {
     "basic": ROOT_DIR / "escenario_basico.json",
-    "large": ROOT_DIR / "escenario_grande_final.json",
-    "ideal": ROOT_DIR / "escenario_casi_ideal_final.json",
+    "large": ROOT_DIR / "escenario_grande.json",
+    "ideal": ROOT_DIR / "escenario_ideal.json",
 }
 
 
@@ -54,7 +55,7 @@ def main() -> None:
         output_dir = output_root / name
         command = [
             sys.executable,
-            str(ROOT_DIR / "scripts" / "comparison_algorithms_badlinks_original.py"),
+            str(ROOT_DIR / "scripts" / "comparison_algorithms.py"),
             "--scenario",
             str(scenario_path),
             "--scenario-mode",
@@ -65,12 +66,18 @@ def main() -> None:
             str(args.simulation_seed),
             "--priority-seed",
             str(args.priority_seed),
+            "--swap-success-prob",
+            str(FINAL_SWAP_SUCCESS_PROB),
             "--log-level",
             args.log_level,
             "--output-dir",
             str(output_dir),
         ]
-        print(f"\n=== {name}: {scenario_path.name} ===", flush=True)
+        print(
+            f"\n=== {name}: {scenario_path.name} "
+            f"(q_swap={FINAL_SWAP_SUCCESS_PROB}) ===",
+            flush=True,
+        )
         subprocess.run(command, cwd=ROOT_DIR, check=True)
 
     print(f"\nResultados finales: {output_root}")

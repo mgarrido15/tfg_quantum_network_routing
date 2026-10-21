@@ -43,7 +43,6 @@ try:
         save_graph,
         save_topology_diagram,
         save_link_metadata,
-        print_simulation_summary,
     )
 except ModuleNotFoundError:
     from scripts.simulation_utils import (
@@ -51,7 +50,6 @@ except ModuleNotFoundError:
         save_graph,
         save_topology_diagram,
         save_link_metadata,
-        print_simulation_summary,
     )
 
 
@@ -613,6 +611,25 @@ def route_cycles_by_request(
     }
 
 
+def success_cycles_by_request(
+    success_history: list[dict],
+    request_ids: set[str],
+) -> dict[str, int]:
+    successful_request_cycles = {
+        (str(event["req_id"]), int(event["cycle"]))
+        for event in success_history
+        if event.get("req_id") is not None and event.get("cycle") is not None
+    }
+    return {
+        req_id: sum(
+            1
+            for successful_req_id, _ in successful_request_cycles
+            if successful_req_id == req_id
+        )
+        for req_id in sorted(request_ids)
+    }
+
+
 def save_routing_coverage_plots(
     output_dir: str,
     algorithms: list[dict],
@@ -667,7 +684,12 @@ def save_routing_coverage_plots(
     axis.grid(axis="y", linestyle="--", alpha=0.3)
     for bars in (route_bars, success_bars):
         axis.bar_label(bars, fmt="%.2f", padding=2)
-    axis.legend(loc="upper left", bbox_to_anchor=(1.01, 1.0))
+    axis.legend(
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.02),
+        ncol=3,
+        frameon=False,
+    )
     figure.tight_layout()
     save_graph(figure, output_dir, "04_sd_pairs_with_success")
 
@@ -680,45 +702,70 @@ def save_routing_coverage_plots(
     )
     if not request_ids:
         return
-    matrix = [
-        [
-            int(item["metrics"].get("route_cycles_by_request", {}).get(req_id, 0))
-            for item in algorithms
+
+    def save_request_cycle_heatmap(
+        cycle_metric: str,
+        *,
+        colorbar_label: str,
+        filename: str,
+    ) -> None:
+        matrix = [
+            [
+                int(item["metrics"].get(cycle_metric, {}).get(req_id, 0))
+                for item in algorithms
+            ]
+            for req_id in request_ids
         ]
-        for req_id in request_ids
-    ]
-    figure, axis = plt.subplots(
-        figsize=(13, max(7.0, 0.36 * len(request_ids)))
+        figure, axis = plt.subplots(
+            figsize=(13, max(7.0, 0.36 * len(request_ids)))
+        )
+        image = axis.imshow(matrix, cmap="YlGn", aspect="auto", vmin=0)
+        axis.set_xticks(
+            range(len(labels)),
+            labels,
+            rotation=25,
+            ha="right",
+            fontsize=15,
+        )
+        axis.set_yticks(
+            range(len(request_ids)),
+            [
+                request_pair_key(req_id).replace("_TO_", " --> ")
+                for req_id in request_ids
+            ],
+            fontsize=13,
+        )
+        axis.set_xlabel("Algoritmo", fontsize=18)
+        axis.set_ylabel("Solicitud", fontsize=18)
+        colorbar = figure.colorbar(image, ax=axis)
+        colorbar.set_label(colorbar_label, fontsize=17)
+        colorbar.ax.tick_params(labelsize=14)
+        max_value = max(max(row) for row in matrix)
+        threshold = max_value / 2 if max_value else 0
+        for row_index, row in enumerate(matrix):
+            for column_index, value in enumerate(row):
+                axis.text(
+                    column_index,
+                    row_index,
+                    str(value),
+                    ha="center",
+                    va="center",
+                    fontsize=15,
+                    color="white" if value > threshold else "black",
+                )
+        figure.tight_layout()
+        save_graph(figure, output_dir, filename)
+
+    save_request_cycle_heatmap(
+        "route_cycles_by_request",
+        colorbar_label="Ciclos con ruta",
+        filename="06_route_cycles_by_request",
     )
-    image = axis.imshow(matrix, cmap="YlGn", aspect="auto", vmin=0)
-    axis.set_xticks(range(len(labels)), labels, rotation=25, ha="right")
-    axis.set_yticks(
-        range(len(request_ids)),
-        [
-            f"{index:02d} {request_pair_key(req_id).replace('_TO_', '→')}"
-            for index, req_id in enumerate(request_ids)
-        ],
+    save_request_cycle_heatmap(
+        "success_cycles_by_request",
+        colorbar_label="Ciclos con éxito E2E",
+        filename="07_success_cycles_by_request",
     )
-    axis.set_xlabel("Algoritmo")
-    axis.set_ylabel("Solicitud")
-    axis.set_title("Número de ciclos en los que cada solicitud tuvo ruta")
-    colorbar = figure.colorbar(image, ax=axis)
-    colorbar.set_label("Ciclos con ruta")
-    max_value = max(max(row) for row in matrix)
-    threshold = max_value / 2 if max_value else 0
-    for row_index, row in enumerate(matrix):
-        for column_index, value in enumerate(row):
-            axis.text(
-                column_index,
-                row_index,
-                str(value),
-                ha="center",
-                va="center",
-                fontsize=7,
-                color="white" if value > threshold else "black",
-            )
-    figure.tight_layout()
-    save_graph(figure, output_dir, "06_route_cycles_by_request")
 
 
 def export_analysis_json(output_dir: str, resultados_finales: dict, rutas_exportar: dict, instrumentacion_por_algoritmo: dict) -> str:
@@ -916,6 +963,11 @@ def main():
             request_route_history,
             request_ids,
         )
+        success_history = instrumentacion.get("success_history", [])
+        successful_cycles = success_cycles_by_request(
+            success_history,
+            request_ids,
+        )
         admitted_pair_cycles = {
             (int(cycle), request_pair_key(str(req_id)))
             for cycle, cycle_info in request_route_history.items()
@@ -923,7 +975,6 @@ def main():
             if info.get("route")
         }
         admitted_pairs = {pair for _, pair in admitted_pair_cycles}
-        success_history = instrumentacion.get("success_history", [])
         successful_pair_cycles = {
             (int(event["cycle"]), request_pair_key(str(event["req_id"])))
             for event in success_history
@@ -1012,6 +1063,7 @@ def main():
                 sum(routed_cycles.values()) / max(1, total_cycles)
             ),
             "route_cycles_by_request": routed_cycles,
+            "success_cycles_by_request": successful_cycles,
         }
 
     print("\n========================================")
@@ -1123,7 +1175,6 @@ def main():
         save_topology_diagram(ultima_net, sim_folder, "00_topology_diagram")
         save_link_metadata(ultima_net, sim_folder, "05_link_metadata")
 
-    print_simulation_summary(sim_folder)
     print("Simulaciones completadas.")
 
 

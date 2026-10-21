@@ -741,6 +741,23 @@ class Forwarder(ForwarderClassicMixin, Application[QNode]):
         qubit_pair = self.memory.read(epr_name)
         if qubit_pair is not None:
             qubit, _ = qubit_pair
+            reset_memories = getattr(
+                self.node.timing,
+                "reset_memories_each_cycle",
+                True,
+            )
+            if (
+                not reset_memories
+                and self.mux.qubit_has_path_id()
+                and qubit.path_id != fib_entry.path_id
+            ):
+                log.warning(
+                    f"{self.node}: discarded stale SWAP_UPDATE for path_id={fib_entry.path_id}; "
+                    f"qubit {qubit.addr} belongs to path_id={qubit.path_id}"
+                )
+                self.release_qubit(qubit, need_remove=True)
+                return
+
             if qubit.state == QubitState.ENTANGLED0:
                 if new_epr is not None:
                     self.remote_swapped_eprs[cast(str, new_epr_name)] = new_epr

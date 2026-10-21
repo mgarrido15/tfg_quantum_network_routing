@@ -1,6 +1,6 @@
 {
   "nodos": [
-    {"id": "n1", "capacity": 6, "fidelity": 0.91},
+    {"id": "n1", "capacity": 2, "fidelity": 0.91},
     {"id": "n2", "capacity": 12, "fidelity": 0.99},
     {"id": "n3", "capacity": 12, "fidelity": 0.99},
     {"id": "n4", "capacity": 6, "fidelity": 0.95},
@@ -46,34 +46,34 @@
     {
       "u": "n3",
       "v": "n5",
-      "length": 0.967848,
+      "length": 6.750187808,
       "alpha": 0.2,
       "eta_s": 0.95,
       "eta_d": 0.95,
       "channels": 5,
-      "fidelity": 0.992776,
+      "fidelity": 0.951044,
       "transfer_error": "DEPOLAR:0.01"
     },
     {
       "u": "n3",
       "v": "n7",
-      "length": 0.967848,
+      "length": 6.750187808,
       "alpha": 0.2,
       "eta_s": 0.95,
       "eta_d": 0.95,
       "channels": 5,
-      "fidelity": 0.992776,
+      "fidelity": 0.951044,
       "transfer_error": "DEPOLAR:0.01"
     },
     {
       "u": "n4",
       "v": "n5",
-      "length": 2.334005,
+      "length": 6.550653134,
       "alpha": 0.2,
       "eta_s": 0.95,
       "eta_d": 0.95,
       "channels": 5,
-      "fidelity": 0.982698,
+      "fidelity": 0.952445,
       "transfer_error": "DEPOLAR:0.01"
     },
     {
@@ -90,7 +90,7 @@
     {
       "u": "n6",
       "v": "n7",
-      "length": 2.334005,
+      "length": 6.550653134,
       "alpha": 0.2,
       "eta_s": 0.95,
       "eta_d": 0.95,

@@ -136,10 +136,19 @@ class MuxSchemeBufferSpace(MuxSchemeFibBase):
     ) -> None:
         _ = neighbor
         qubits = self.memory.find(lambda q, _: q.path_id == fib_entry.path_id, qchannel=qchannel)
-        addrs = [q[0].addr for q in qubits]
+        qubit_list = [q for q, _ in qubits]
+        addrs = [q.addr for q in qubit_list]
+        reset_memories = getattr(
+            self.node.timing,
+            "reset_memories_each_cycle",
+            True,
+        )
+        if not reset_memories:
+            for qubit in qubit_list:
+                if qubit.state not in (QubitState.RAW, QubitState.RELEASE):
+                    self.fw.release_qubit(qubit, need_remove=True)
         self.memory.deallocate(*addrs)
         log.debug(f"{self.node}: deallocated {direction} qubits: {addrs}")
-        pass
 
     @override
     def qubit_has_path_id(self) -> bool:

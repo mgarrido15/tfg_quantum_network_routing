@@ -84,13 +84,12 @@ python scripts/scaling_experiments.py [options]
 
 Available options:
 
-| Option | Value | Default | Description |
-| --- | --- | --- | --- |
-| `--seed` | Integer | `7` | Base seed from which independent topology, physical-event and request-priority seeds are derived for each repetition. |
-| `--repetitions` | Integer | `10` | Number of independent topology/physical-seed replications performed at each experimental point. Each replication uses a new topology and one physical realization. |
-| `--from-results` | Path | None | Regenerates the plots from an existing `scaling_experiment_results.json` without rerunning the simulations. |
-| `--output-dir` | Path | Results directory | Directory in which regenerated plots are saved. It is used together with `--from-results`. |
-| `-h`, `--help` | — | — | Displays the command-line help. |
+| `--seed` | Base seed from which independent topology, physical-event and request-priority seeds are derived for each repetition. 
+| `--repetitions` | Number of independent topology/physical-seed replications performed at each experimental point. Each replication uses a new topology and one physical realization. 
+| `--from-results` | Regenerates the plots from an existing `scaling_experiment_results.json` without rerunning the simulations. 
+| `--output-dir` | Directory in which regenerated plots are saved. It is used together with `--from-results`. 
+| `--reset-memories-each-cycle` / `--no-reset-memories-each-cycle` | Enables or disables quantum-memory reset at the start of each cycle. Reset is enabled by default. |
+| `--help` | Displays the command-line help. 
 
 ### Algorithm comparison
 
@@ -98,53 +97,38 @@ The algorithm comparison script creates a degraded version of the selected
 scenario and evaluates all routing algorithms under the same conditions:
 
 ```bash
-python scripts/comparison_algorithms_badlinks_original.py [options]
+python scripts/comparison_algorithms.py [options]
 ```
 
 Available options:
 
-| Option | Value | Default | Description |
-| --- | --- | --- | --- |
-| `--scenario` | Path | `escenario_grande_multicanal_w.json` | Base JSON scenario used by the experiment. |
-| `--sim-time` | Decimal | `1000.0` | Total simulated time in seconds. |
-| `--fidelity-scale` | Decimal | `0.95` | Multiplicative degradation applied to link fidelity. |
-| `--min-link-fidelity` | Decimal | `0.92` | Minimum link fidelity allowed after degradation. |
-| `--alpha-scale` | Decimal | `1.05` | Multiplicative factor applied to the attenuation coefficient. |
-| `--length-scale` | Decimal | `1.02` | Multiplicative factor applied to link lengths. |
-| `--channels-per-link` | Integer | `5` | Number of parallel physical quantum channels per link. Must be at least one. |
-| `--eta-d` | Decimal | `0.8` | Detector efficiency used to calculate physical link success probabilities. Must be between zero and one. |
-| `--log-level` | Text | `WARN` | Logging level: `CRITICAL`, `FATAL`, `ERROR`, `WARN`, `INFO`, or `DEBUG`. |
-| `--request-fraction` | Decimal | `1.0` | Fraction of scenario requests to simulate. Must be in the interval `(0, 1]`. |
-| `--request-seed` | Integer | `42` | Seed used to sample requests when `--request-fraction` is less than one. |
-| `--simulation-seed` | Integer | `10007` | Physical-event seed reset before every compared algorithm. |
-| `--priority-seed` | Integer | `20011` | Independent seed used to shuffle request priority in every cycle. |
-| `--swap-policy` | Text | `l2r` | Common swapping order used by every compared algorithm. |
-| `--swap-success-prob` | Decimal | `0.85` | Success probability of each swapping operation. Must be between zero and one. |
-| `-h`, `--help` | — | — | Displays the command-line help. |
+| `--scenario` | Base JSON scenario used by the experiment. 
+| `--sim-time` | Total simulated time in seconds. 
+| `--fidelity-scale` | Multiplicative degradation applied to link fidelity. 
+| `--min-link-fidelity` | Minimum link fidelity allowed after degradation. 
+| `--alpha-scale` | Multiplicative factor applied to the attenuation coefficient. 
+| `--length-scale` | Multiplicative factor applied to link lengths. 
+| `--channels-per-link` | Number of parallel physical quantum channels per link. Must be at least one. 
+| `--eta-d` | Detector efficiency used to calculate physical link success probabilities. Must be between zero and one. 
+| `--log-level` | Logging level: `CRITICAL`, `FATAL`, `ERROR`, `WARN`, `INFO`, or `DEBUG`. 
+| `--request-fraction` | Fraction of scenario requests to simulate. Must be in the interval `(0, 1]`. 
+| `--request-seed` | Seed used to sample requests when `--request-fraction` is less than one. 
+| `--simulation-seed` | Physical-event seed reset before every compared algorithm. 
+| `--priority-seed` | Independent seed used to shuffle request priority in every cycle. 
+| `--swap-policy` | Common swapping order used by every compared algorithm. 
+| `--swap-success-prob` | DSuccess probability of each swapping operation. Must be between zero and one. 
+| `--help` | Displays the command-line help. 
 
-Run the comparison with its default configuration:
-
-```bash
-python scripts/comparison_algorithms_badlinks_original.py
-```
-
-Use `--scenario-mode as-is` for an already materialized scenario. In this mode
-the runner copies the JSON unchanged into the result folder and does not apply
-length, attenuation, fidelity, detector-efficiency or channel transformations.
 
 ### Final basic, large and near-ideal scenarios
 
 The three final scenarios are:
 
-| Name | File | Topology | Link success probabilities | Channels |
-| --- | --- | --- | --- | --- |
-| Basic | `escenario_basico.json` | 8 nodes, 10 links, 2 requests | Two links near 0.30; remaining links 0.70–0.85 | 5 |
-| Large | `escenario_grande_final.json` | 40 nodes, 73 links, 30 requests | 0.45–0.55 | 5 |
-| Near ideal | `escenario_casi_ideal_final.json` | Same as large | 0.95–0.99 | 5 |
 
-Probabilities are derived from physical distances; the final JSON files do not
-contain an explicit `prob` override. Regenerate the large and near-ideal files
-deterministically with:
+| Basic | `escenario_basico.json` | 8 nodes, 10 links, 2 requests | Two links near 0.30; remaining links 0.70–0.85
+| Large | `escenario_grande.json` | 40 nodes, 73 links, 9 requests | 0.45–0.55 
+| Near ideal | `escenario_ideal.json` | 40 nodes, 73 links, 30 requests | 0.95–0.99 
+
 
 ```bash
 python scripts/build_final_scenarios.py
@@ -156,6 +140,9 @@ Run all three final comparisons without modifying their scenarios:
 python scripts/run_final_scenarios.py --scenario all --sim-time 1000
 ```
 
+The final basic, large and near-ideal campaign uses a swapping success
+probability of `0.85` for every algorithm, matching the scaling campaign.
+
 Run only one scenario:
 
 ```bash
@@ -164,11 +151,6 @@ python scripts/run_final_scenarios.py --scenario large --sim-time 1000
 python scripts/run_final_scenarios.py --scenario ideal --sim-time 1000
 ```
 
-Every command creates a new `outputs/final_scenarios_<timestamp>/` directory.
-Each selected scenario has its own child directory containing the effective
-scenario, throughput, fidelity, satisfied-pair and topology plots, raw JSON
-results, link metadata and a reproducibility manifest.
-
 ### Multi-seed convergence and paired comparisons
 
 The convergence runner executes every algorithm on the same physical and
@@ -176,59 +158,5 @@ request-priority seeds. It reports means, medians, 95% Student-t confidence
 intervals, paired algorithm differences and the Q-CAST backup ablation:
 
 ```bash
-python scripts/comparison_algorithms_convergence.py --repetitions 14 --sim-time 1000 --policies l2r
-```
-
-The default throughput precision target is a 95% confidence-interval
-half-width no larger than `max(0.005 EPS, 10% of the mean)`. The generated JSON
-reports whether this target was reached and estimates the required repetitions
-from the observed standard deviation. This estimate is configuration-specific;
-other scenarios and swapping policies must verify their own dispersion.
-
-| Option | Value | Default | Description |
-| --- | --- | --- | --- |
-| `--repetitions` | Integer | `10` | Independent physical and priority seed pairs. Must be at least two. |
-| `--seed-base` | Integer | `10007` | First physical-event seed. |
-| `--priority-seed-base` | Integer | `20011` | First independent request-priority seed. |
-| `--policies` | Text list | `l2r asap` | Swapping policies evaluated separately. |
-| `--scenario-mode` | Text | `as-is` | Copy the effective basic scenario or apply the legacy transformation with `historical-compatible`. |
-| `--historical-results` | Path | Basic historical output | Historical `analysis_results.json` included only as a non-statistical reference. |
-| `--throughput-absolute-precision` | Decimal | `0.005` | Absolute EPS half-width used near zero. |
-| `--throughput-relative-precision` | Decimal | `0.10` | Relative half-width used away from zero. |
-
-### Channel-count ablation
-
-The channel ablation repeats the basic scenario with 1, 2, 3 and 5 physical
-channels per link while preserving its topology, requests, link physics and
-memory capacities. Each algorithm uses the same physical and request-priority
-seed pairs at every experimental point. The runner stores the generated
-scenarios, raw runs, Student-t intervals, paired comparisons, the backup
-ablation, a throughput plot and a reproducibility manifest.
-
-```bash
-python scripts/channel_ablation.py --repetitions 10 --sim-time 1000 --policies l2r
-```
-
-The default output is a new timestamped directory under `outputs`; existing
-historical results are not overwritten. Use `--channel-counts` to select other
-positive channel counts and `--output-dir` to choose a new explicit directory.
-The source scenario must provision enough memory at every node for the largest
-selected channel count.
-
-### Historical results
-
-The preserved historical outputs were produced by earlier simulator semantics.
-Their values and limitations are audited in
-`Archivos_GuiaProyecto/COMPARACION_RESULTADOS_HISTORICOS.md`. They are useful as
-descriptive legacy evidence, but they are not numerically interchangeable with
-results from the corrected lifecycle, metrics and multichannel semantics.
-
-The complete and authoritative option list for either script can always be
-displayed with:
-
-```bash
-python scripts/scaling_experiments.py --help
-python scripts/comparison_algorithms_badlinks_original.py --help
-python scripts/comparison_algorithms_convergence.py --help
-python scripts/channel_ablation.py --help
+python scripts/comparison_algorithms.py --repetitions 14 --sim-time 1000 --policies l2r
 ```
