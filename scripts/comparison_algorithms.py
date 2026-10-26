@@ -323,21 +323,21 @@ def install_stack(
         forwarder = forwarder_class(
             k_max=2,
             ps=swap_success_prob,
-            purif_enabled=False,
+            purif_enabled=True,
             swapping_enabled=True,
         )
     elif qcast_queries:
         forwarder = QCastForwarder(
             k_max=2,
             ps=swap_success_prob,
-            purif_enabled=False,
+            purif_enabled=True,
             swapping_enabled=True,
         )
     else:
         forwarder = StaticQCastForwarder(
             k_max=2,
             ps=swap_success_prob,
-            purif_enabled=False,
+            purif_enabled=True,
             swapping_enabled=True,
         )
 
